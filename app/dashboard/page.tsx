@@ -18,6 +18,9 @@ export default function DashboardPage() {
   const [subcategorySearch, setSubcategorySearch] = useState("");
   const [sortType, setSortType] = useState("Ranksales");
   const [currency, setCurrency] = useState<"CNY" | "USD" | "COP">("CNY");
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(
+    new Set(),
+  );
 
   const [loading, setLoading] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(true);
@@ -28,7 +31,6 @@ export default function DashboardPage() {
   // Filtrar categorías por búsqueda
   const filteredCategories = useMemo(() => {
     if (!categorySearch.trim()) return categories;
-
     const searchLower = categorySearch.toLowerCase().trim();
     return categories.filter((cat) =>
       cat.Name.toLowerCase().includes(searchLower),
@@ -38,7 +40,6 @@ export default function DashboardPage() {
   // Filtrar subcategorías por búsqueda
   const filteredSubcategories = useMemo(() => {
     if (!subcategorySearch.trim()) return subcategories;
-
     const searchLower = subcategorySearch.toLowerCase().trim();
     return subcategories.filter((cat) =>
       cat.Name.toLowerCase().includes(searchLower),
@@ -48,7 +49,11 @@ export default function DashboardPage() {
   useEffect(() => {
     const token = localStorage.getItem("authToken");
     const env = localStorage.getItem("environment");
-    const savedCurrency = localStorage.getItem("currency") as "CNY" | "USD" | "COP" | null;
+    const savedCurrency = localStorage.getItem("currency") as
+      | "CNY"
+      | "USD"
+      | "COP"
+      | null;
 
     if (!token) {
       router.push("/");
@@ -140,6 +145,7 @@ export default function DashboardPage() {
 
     setLoading(true);
     setError("");
+    setSelectedProducts(new Set()); // Limpia la selección al recargar productos
 
     try {
       const otApiService = new OtApiService();
@@ -159,12 +165,13 @@ export default function DashboardPage() {
       }
 
       setProducts(response.Content || []);
-
       if (!response.Content || response.Content.length === 0) {
         setError("No se encontraron productos en esta categoría");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar productos");
+      setError(
+        err instanceof Error ? err.message : "Error al cargar productos",
+      );
       console.error("Error fetching products:", err);
     } finally {
       setLoading(false);
@@ -221,6 +228,42 @@ export default function DashboardPage() {
       default:
         return "🇨🇳 Yuan (¥)";
     }
+  };
+
+  // Selección de productos
+  const handleSelectProduct = (id: string) => {
+    setSelectedProducts((prev) => {
+      const updated = new Set(prev);
+      if (updated.has(id)) updated.delete(id);
+      else updated.add(id);
+      return updated;
+    });
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedProducts.size === products.length)
+      setSelectedProducts(new Set());
+    else setSelectedProducts(new Set(products.map((p) => p.ItemId)));
+  };
+
+  // Exporta URLs seleccionadas (o todas si no hay selección)
+  const exportToCSV = () => {
+    const selected =
+      selectedProducts.size === 0
+        ? products // Si nada seleccionado, TODOS
+        : products.filter((p) => selectedProducts.has(p.ItemId));
+
+    const csvRows = [["Taobao URL"], ...selected.map((p) => [p.ItemUrl])];
+    const csvContent = csvRows.map((row) => row.join(",")).join("\n");
+
+    // Descarga el archivo
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "taobao-urls.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -445,7 +488,9 @@ export default function DashboardPage() {
                     </label>
                     <select
                       value={currency}
-                      onChange={(e) => setCurrency(e.target.value as "CNY" | "USD" | "COP")}
+                      onChange={(e) =>
+                        setCurrency(e.target.value as "CNY" | "USD" | "COP")
+                      }
                       className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                       disabled={loading}
                     >
@@ -542,47 +587,63 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Export controls y selección global */}
+        {!loading && products.length > 0 && (
+          <div className="mb-6 flex flex-wrap items-center gap-6 justify-between">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={
+                  selectedProducts.size === products.length &&
+                  products.length > 0
+                }
+                onChange={handleToggleSelectAll}
+                className="form-checkbox h-5 w-5 text-blue-600"
+                id="select-all-checkbox"
+              />
+              <label
+                htmlFor="select-all-checkbox"
+                className="font-medium cursor-pointer text-gray-700 dark:text-gray-300"
+              >
+                Seleccionar todos ({selectedProducts.size}/{products.length})
+              </label>
+            </div>
+            <button
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+              onClick={exportToCSV}
+              disabled={products.length === 0}
+              type="button"
+            >
+              {selectedProducts.size === 0 ||
+              selectedProducts.size === products.length
+                ? "Exportar todos a CSV"
+                : `Exportar (${selectedProducts.size}) a CSV`}
+            </button>
+          </div>
+        )}
         {/* Products Grid */}
         {!loading && products.length > 0 && (
-          <>
-            <div className="mb-6 flex items-center justify-between">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Mostrando{" "}
-                <span className="font-semibold text-gray-900 dark:text-white">
-                  {products.length}
-                </span>{" "}
-                productos ordenados por{" "}
-                <span className="font-semibold text-blue-600 dark:text-blue-400">
-                  {getSortLabel(sortType)}
-                </span>
-              </p>
-              <button
-                onClick={fetchProducts}
-                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium flex items-center gap-1"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-                Actualizar
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {products.map((product, index) => (
-                <div
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {products.map((product, index) => {
+              const isSelected = selectedProducts.has(product.ItemId);
+              return (
+                <button
                   key={`${product.ItemId}-${index}`}
-                  className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 hover:scale-105"
+                  type="button"
+                  onClick={() => handleSelectProduct(product.ItemId)}
+                  className={`bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 hover:scale-105 relative cursor-pointer ${
+                    isSelected ? "shadow-lg shadow-blue-400/60" : ""
+                  }`}
+                  style={{ textAlign: "inherit" }} // Para evitar select azul de botón en algunos navegadores
                 >
+                  {/* Selector */}
+                  <input
+                    type="checkbox"
+                    className="absolute top-3 left-3 h-5 w-5 text-blue-600 z-10 pointer-events-none"
+                    checked={isSelected}
+                    tabIndex={-1}
+                    readOnly
+                  />
                   {/* Product Image */}
                   <div className="relative h-64 bg-gray-200 dark:bg-gray-700">
                     {product.ImageUrl ? (
@@ -619,18 +680,16 @@ export default function DashboardPage() {
                         </div>
                       )}
                     {sortType === "Ranksales" && index < 3 && (
-                      <div className="absolute top-2 left-2 bg-yellow-400 text-gray-900 px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
+                      <div className="absolute top-2 left-9 bg-yellow-400 text-gray-900 px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
                         <span>🔥</span>#{index + 1} Más Vendido
                       </div>
                     )}
                   </div>
-
                   {/* Product Info */}
                   <div className="p-4">
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white line-clamp-2 mb-3 h-10 leading-5">
                       {product.Title || "Producto sin título"}
                     </h3>
-
                     <div className="flex items-baseline gap-2 mb-3">
                       <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                         {formatPrice(product)}
@@ -643,7 +702,6 @@ export default function DashboardPage() {
                           </span>
                         )}
                     </div>
-
                     <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-4">
                       {product.Rating && typeof product.Rating === "number" && (
                         <div className="flex items-center gap-1">
@@ -665,25 +723,26 @@ export default function DashboardPage() {
                         vendidos
                       </span>
                     </div>
-
                     {product.ShopName && (
                       <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate">
                         🏪 {product.ShopName}
                       </p>
                     )}
-
                     {product.PublishDate && sortType === "Ranknew" && (
                       <p className="text-xs text-purple-600 dark:text-purple-400 mb-3 truncate">
-                        📅 Publicado: {new Date(product.PublishDate).toLocaleDateString('es-ES')}
+                        📅 Publicado:{" "}
+                        {new Date(product.PublishDate).toLocaleDateString(
+                          "es-ES",
+                        )}
                       </p>
                     )}
-
                     {product.ItemUrl ? (
                       <a
                         href={product.ItemUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="block w-full text-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg transition-all font-medium text-sm shadow-md hover:shadow-lg"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         Ver en Taobao →
                       </a>
@@ -693,10 +752,10 @@ export default function DashboardPage() {
                       </div>
                     )}
                   </div>
-                </div>
-              ))}
-            </div>
-          </>
+                </button>
+              );
+            })}
+          </div>
         )}
 
         {/* Empty State */}
