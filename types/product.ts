@@ -16,6 +16,9 @@ export interface OtapiItem {
   ProviderType?: string;
   PublishDate?: string;       // Publication date of the product
   ConfigurationId?: string;   // Configuration/SKU ID if exists
+  Weight?: number;
+  WeightUnit?: string;
+  SellerRating?: number;
 }
 
 export interface OtapiCategory {
@@ -33,6 +36,15 @@ export interface OtapiResponse<T> {
   ErrorDescription?: string;
   Content?: T[];
   TotalCount?: number;
+  RequestId?: string;
+  RequestTime?: number;
+}
+
+export interface OtapiCategoriesTreeResponse {
+  ErrorCode: number | string;
+  ErrorDescription?: string;
+  Content?: OtapiCategory[];
+  SubcategoriesByParentId?: Record<string, OtapiCategory[]>;
   RequestId?: string;
   RequestTime?: number;
 }
