@@ -14,7 +14,7 @@ A Next.js application for importing products from Taobao using the OtCommerce AP
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn
 
 ### Installation
@@ -46,13 +46,17 @@ The application supports two environments:
 
 You can select the environment on the login screen.
 
+## OTAPI – Optimización de coste
+
+Para reducir las llamadas de pago a la API OTAPI (categorías) se usa un árbol de categorías en una sola llamada; el listado de productos no tiene cache (cada petición llama a OTAPI).
+
 ## API Integration
 
 The application integrates with the OtCommerce API for authentication:
 
 - **Endpoint**: `/rest/V1/integration/admin/token`
 - **Method**: POST
-- **Body**: 
+- **Body**:
 ```json
 {
   "username": "admin_user",

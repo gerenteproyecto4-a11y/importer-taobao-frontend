@@ -72,19 +72,6 @@ interface SearchItemsFrameResponse {
   RequestTime?: number;
 }
 
-// Cache
-const cache = new Map<string, { data: unknown; timestamp: number }>();
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutos
-
-function cleanupCache() {
-  const now = Date.now();
-  cache.forEach((value, key) => {
-    if (now - value.timestamp > CACHE_TTL) {
-      cache.delete(key);
-    }
-  });
-}
-
 /**
  * Extrae el precio correcto en CNY (yuanes) de promociones/configuraciones/base
  */
@@ -362,13 +349,6 @@ export async function GET(request: NextRequest) {
       COP: currencyData.rates.COP,
     };
 
-    cleanupCache();
-    const cacheKey = `${categoryId}-${language}-${sortType}-${pageSize}`;
-    const cached = cache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return NextResponse.json(cached.data);
-    }
-
     const { products: rawProducts, totalCount } = await searchProducts(
       categoryId,
       instanceKey,
@@ -385,7 +365,6 @@ export async function GET(request: NextRequest) {
         RequestId: `req-${Date.now()}`,
         RequestTime: Date.now(),
       };
-      cache.set(cacheKey, { data: emptyResponse, timestamp: Date.now() });
       return NextResponse.json(emptyResponse);
     }
 
@@ -405,7 +384,6 @@ export async function GET(request: NextRequest) {
       RequestTime: Date.now(),
     };
 
-    cache.set(cacheKey, { data: response, timestamp: Date.now() });
     return NextResponse.json(response);
 
   } catch (error) {

@@ -36,3 +36,12 @@ export interface OtapiResponse<T> {
   RequestId?: string;
   RequestTime?: number;
 }
+
+export interface OtapiCategoriesTreeResponse {
+  ErrorCode: number | string;
+  ErrorDescription?: string;
+  Content?: OtapiCategory[];
+  SubcategoriesByParentId?: Record<string, OtapiCategory[]>;
+  RequestId?: string;
+  RequestTime?: number;
+}

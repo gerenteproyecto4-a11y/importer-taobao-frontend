@@ -11,6 +11,7 @@ export default function DashboardPage() {
   const [products, setProducts] = useState<OtapiItem[]>([]);
   const [categories, setCategories] = useState<OtapiCategory[]>([]);
   const [subcategories, setSubcategories] = useState<OtapiCategory[]>([]);
+  const [subcategoriesByParentId, setSubcategoriesByParentId] = useState<Record<string, OtapiCategory[]>>({});
 
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedSubcategory, setSelectedSubcategory] = useState("");
@@ -73,13 +74,14 @@ export default function DashboardPage() {
   }, [currency]);
 
   useEffect(() => {
-    if (selectedCategory) {
-      fetchSubcategories(selectedCategory);
-    } else {
+    if (!selectedCategory) {
       setSubcategories([]);
       setSelectedSubcategory("");
+      return;
     }
-  }, [selectedCategory]);
+    const fromTree = subcategoriesByParentId[selectedCategory];
+    setSubcategories(fromTree ?? []);
+  }, [selectedCategory, subcategoriesByParentId]);
 
   // Hacer nueva petición cuando cambie el sortType (solo si ya hay productos)
   useEffect(() => {
@@ -92,46 +94,22 @@ export default function DashboardPage() {
     setLoadingCategories(true);
     try {
       const otApiService = new OtApiService();
-      const response = await otApiService.getCategories(
+      const response = await otApiService.getCategoriesTree(
         OTAPI_CONFIG.INSTANCE_KEY,
         OTAPI_CONFIG.DEFAULT_LANGUAGE,
       );
 
       if (response.ErrorCode !== 0 && response.ErrorCode !== "Ok") {
-        console.warn("Failed to fetch categories:", response.ErrorDescription);
+        console.warn("Failed to fetch categories tree:", response.ErrorDescription);
         return;
       }
 
       setCategories(response.Content || []);
+      setSubcategoriesByParentId(response.SubcategoriesByParentId || {});
     } catch (err) {
-      console.error("Error fetching categories:", err);
+      console.error("Error fetching categories tree:", err);
     } finally {
       setLoadingCategories(false);
-    }
-  };
-
-  const fetchSubcategories = async (parentCategoryId: string) => {
-    try {
-      const otApiService = new OtApiService();
-      const response = await otApiService.getSubcategories(
-        OTAPI_CONFIG.INSTANCE_KEY,
-        parentCategoryId,
-        OTAPI_CONFIG.DEFAULT_LANGUAGE,
-      );
-
-      if (response.ErrorCode !== 0 && response.ErrorCode !== "Ok") {
-        console.warn(
-          "Failed to fetch subcategories:",
-          response.ErrorDescription,
-        );
-        setSubcategories([]);
-        return;
-      }
-
-      setSubcategories(response.Content || []);
-    } catch (err) {
-      console.error("Error fetching subcategories:", err);
-      setSubcategories([]);
     }
   };
 
