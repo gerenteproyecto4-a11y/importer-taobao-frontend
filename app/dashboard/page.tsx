@@ -6,6 +6,44 @@ import { OtApiService } from "@/lib/api/otapi";
 import { OTAPI_CONFIG } from "@/lib/api/config";
 import { OtapiItem, OtapiCategory } from "@/types/product";
 
+const RECENT_SEARCHES_KEY = "taobao-recent-searches";
+const MAX_RECENT_SEARCHES = 5;
+
+interface RecentSearch {
+  categoryId: string;
+  subcategoryId: string;
+  categoryName: string;
+  subcategoryName: string;
+  sortType: string;
+}
+
+function loadRecentSearchesFromStorage(): RecentSearch[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(RECENT_SEARCHES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.slice(0, MAX_RECENT_SEARCHES) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentSearch(item: RecentSearch) {
+  const list = loadRecentSearchesFromStorage();
+  const key = `${item.categoryId}|${item.subcategoryId || ""}|${item.sortType}`;
+  const filtered = list.filter(
+    (x) => `${x.categoryId}|${x.subcategoryId || ""}|${x.sortType}` !== key
+  );
+  const updated = [item, ...filtered].slice(0, MAX_RECENT_SEARCHES);
+  try {
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+  return updated;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [products, setProducts] = useState<OtapiItem[]>([]);
@@ -28,6 +66,12 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [environment, setEnvironment] = useState("");
   const [pageSize, setPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+
+  const [categoryPath, setCategoryPath] = useState<OtapiCategory[]>([]);
+  const [loadingPath, setLoadingPath] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
 
   // Filtrar categorías por búsqueda
   const filteredCategories = useMemo(() => {
@@ -65,6 +109,7 @@ export default function DashboardPage() {
     if (savedCurrency) {
       setCurrency(savedCurrency);
     }
+    setRecentSearches(loadRecentSearchesFromStorage());
     fetchCategories();
   }, [router]);
 
@@ -86,9 +131,35 @@ export default function DashboardPage() {
   // Hacer nueva petición cuando cambie el sortType (solo si ya hay productos)
   useEffect(() => {
     if (selectedCategory && products.length > 0) {
-      fetchProducts();
+      setCurrentPage(0);
+      fetchProducts(0);
     }
   }, [sortType]);
+
+  useEffect(() => {
+    const categoryId = selectedSubcategory || selectedCategory;
+    if (!categoryId) {
+      setCategoryPath([]);
+      return;
+    }
+    setLoadingPath(true);
+    const otApiService = new OtApiService();
+    otApiService
+      .getCategoryRootPath(
+        OTAPI_CONFIG.INSTANCE_KEY,
+        categoryId,
+        OTAPI_CONFIG.DEFAULT_LANGUAGE,
+      )
+      .then((res) => {
+        if (res.ErrorCode === 0 || res.ErrorCode === "Ok") {
+          setCategoryPath(res.Content || []);
+        } else {
+          setCategoryPath([]);
+        }
+      })
+      .catch(() => setCategoryPath([]))
+      .finally(() => setLoadingPath(false));
+  }, [selectedCategory, selectedSubcategory]);
 
   const fetchCategories = async () => {
     setLoadingCategories(true);
@@ -113,8 +184,13 @@ export default function DashboardPage() {
     }
   };
 
-  const fetchProducts = async () => {
-    const categoryId = selectedSubcategory || selectedCategory;
+  const fetchProducts = async (
+    framePosition: number = 0,
+    overrides?: { categoryId: string; subcategoryId?: string; sortType?: string; categoryName?: string; subcategoryName?: string }
+  ) => {
+    const catId = overrides?.categoryId ?? selectedCategory;
+    const subId = overrides?.subcategoryId;
+    const categoryId = subId || catId;
 
     if (!categoryId) {
       setError("Por favor selecciona una categoría");
@@ -123,17 +199,29 @@ export default function DashboardPage() {
 
     setLoading(true);
     setError("");
-    setSelectedProducts(new Set()); // Limpia la selección al recargar productos
+
+    if (framePosition === 0) {
+      setSelectedProducts(new Set());
+      if (overrides) {
+        setSelectedCategory(catId);
+        setSelectedSubcategory(subId ?? "");
+        setSortType(overrides.sortType ?? sortType);
+      }
+    } else {
+      setSelectedProducts(new Set());
+    }
+
+    const sortToUse = overrides?.sortType ?? sortType;
 
     try {
       const otApiService = new OtApiService();
       const response = await otApiService.getBestSellingProducts({
         instanceKey: OTAPI_CONFIG.INSTANCE_KEY,
-        categoryId: categoryId,
+        categoryId,
         language: OTAPI_CONFIG.DEFAULT_LANGUAGE,
         frameSize: pageSize,
-        framePosition: 0,
-        sortType: sortType, // Enviar sortType al backend
+        framePosition,
+        sortType: sortToUse,
       });
 
       if (response.ErrorCode !== 0 && response.ErrorCode !== "Ok") {
@@ -143,8 +231,20 @@ export default function DashboardPage() {
       }
 
       setProducts(response.Content || []);
+      setTotalCount(response.TotalCount ?? 0);
       if (!response.Content || response.Content.length === 0) {
         setError("No se encontraron productos en esta categoría");
+      } else if (framePosition === 0) {
+        const categoryName = overrides?.categoryName ?? categories.find((c) => c.CategoryId === catId)?.Name ?? "";
+        const subcategoryName = overrides?.subcategoryName ?? (subId ? subcategories.find((s) => s.CategoryId === subId)?.Name ?? "" : "");
+        const saved = saveRecentSearch({
+          categoryId: catId,
+          subcategoryId: subId ?? "",
+          categoryName,
+          subcategoryName,
+          sortType: sortToUse,
+        });
+        setRecentSearches(saved);
       }
     } catch (err) {
       setError(
@@ -164,7 +264,34 @@ export default function DashboardPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchProducts();
+    setCurrentPage(0);
+    fetchProducts(0);
+  };
+
+  const loadRecentSearch = (item: RecentSearch) => {
+    setCurrentPage(0);
+    setError("");
+    fetchProducts(0, {
+      categoryId: item.categoryId,
+      subcategoryId: item.subcategoryId || undefined,
+      sortType: item.sortType,
+      categoryName: item.categoryName,
+      subcategoryName: item.subcategoryName,
+    });
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage <= 0) return;
+    const next = currentPage - 1;
+    setCurrentPage(next);
+    fetchProducts(next * pageSize);
+  };
+
+  const handleNextPage = () => {
+    if ((currentPage + 1) * pageSize >= totalCount) return;
+    const next = currentPage + 1;
+    setCurrentPage(next);
+    fetchProducts(next * pageSize);
   };
 
   const getSortLabel = (sort: string) => {
@@ -233,9 +360,7 @@ export default function DashboardPage() {
 
     const csvRows = [["Taobao URL"], ...selected.map((p) => [p.ItemUrl])];
     const csvContent = csvRows.map((row) => row.join(",")).join("\n");
-
-    // Descarga el archivo
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -270,6 +395,79 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Breadcrumb: desde API (GetCategoryRootPath) o fallback con nombres del árbol */}
+        {(selectedCategory || selectedSubcategory) && (
+          <div className="mb-4 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            {loadingPath ? (
+              <span className="animate-pulse">Cargando ruta...</span>
+            ) : categoryPath.length > 0 ? (
+              <>
+                <span>Ruta:</span>
+                <span className="font-medium text-gray-800 dark:text-gray-200">
+                  Inicio
+                  {categoryPath.map((cat) => (
+                    <span key={cat.CategoryId}>
+                      <span className="mx-1">›</span>
+                      {cat.Name}
+                    </span>
+                  ))}
+                </span>
+              </>
+            ) : (
+              <>
+                <span>Ruta:</span>
+                <span className="font-medium text-gray-800 dark:text-gray-200">
+                  Inicio
+                  {selectedCategory && (
+                    <>
+                      <span className="mx-1">›</span>
+                      {categories.find((c) => c.CategoryId === selectedCategory)?.Name ?? "Categoría"}
+                    </>
+                  )}
+                  {selectedSubcategory && (
+                    <>
+                      <span className="mx-1">›</span>
+                      {subcategories.find((s) => s.CategoryId === selectedSubcategory)?.Name ?? "Subcategoría"}
+                    </>
+                  )}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Búsquedas recientes (localStorage, gratuito) */}
+        {recentSearches.length > 0 && (
+          <div className="mb-4">
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+              Búsquedas recientes{" "}
+              <span className="text-xs font-normal text-amber-600 dark:text-amber-400">
+                (cada &quot;Cargar&quot; = 1 nueva búsqueda / 1 cobro)
+              </span>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {recentSearches.map((item, idx) => (
+                <button
+                  key={`${item.categoryId}-${item.subcategoryId || "root"}-${idx}`}
+                  type="button"
+                  onClick={() => loadRecentSearch(item)}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition disabled:opacity-50"
+                >
+                  <span className="truncate max-w-[200px]">
+                    {item.subcategoryName
+                      ? `${item.categoryName} › ${item.subcategoryName}`
+                      : item.categoryName}
+                  </span>
+                  <span className="text-gray-500 dark:text-gray-400 text-xs">
+                    Cargar
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Search and Filters */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8">
           <form onSubmit={handleSearch} className="space-y-6">
@@ -536,21 +734,34 @@ export default function DashboardPage() {
         {/* Error Message */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-8">
-            <div className="flex items-start gap-3">
-              <svg
-                className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0"
-                fill="currentColor"
-                viewBox="0 0 20 20"
+            <div className="flex items-start gap-3 flex-wrap">
+              <div className="flex items-start gap-3 flex-1 min-w-0">
+                <svg
+                  className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                  {error}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setCurrentPage(0);
+                  fetchProducts(0);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition shrink-0"
               >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                {error}
-              </p>
+                Reintentar
+              </button>
             </div>
           </div>
         )}
@@ -565,39 +776,70 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Export controls y selección global */}
+        {/* Export controls, pagination y selección */}
         {!loading && products.length > 0 && (
-          <div className="mb-6 flex flex-wrap items-center gap-6 justify-between">
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={
-                  selectedProducts.size === products.length &&
-                  products.length > 0
-                }
-                onChange={handleToggleSelectAll}
-                className="form-checkbox h-5 w-5 text-blue-600"
-                id="select-all-checkbox"
-              />
-              <label
-                htmlFor="select-all-checkbox"
-                className="font-medium cursor-pointer text-gray-700 dark:text-gray-300"
+          <>
+            <div className="mb-4 flex flex-wrap items-center gap-4 justify-between">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={
+                    selectedProducts.size === products.length &&
+                    products.length > 0
+                  }
+                  onChange={handleToggleSelectAll}
+                  className="form-checkbox h-5 w-5 text-blue-600"
+                  id="select-all-checkbox"
+                />
+                <label
+                  htmlFor="select-all-checkbox"
+                  className="font-medium cursor-pointer text-gray-700 dark:text-gray-300"
+                >
+                  Seleccionar todos ({selectedProducts.size}/{products.length})
+                </label>
+              </div>
+              <button
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm"
+                onClick={exportToCSV}
+                disabled={products.length === 0}
+                type="button"
               >
-                Seleccionar todos ({selectedProducts.size}/{products.length})
-              </label>
+                {selectedProducts.size === 0 || selectedProducts.size === products.length
+                  ? "Exportar URLs"
+                  : `Exportar ${selectedProducts.size} URLs`}
+              </button>
             </div>
-            <button
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
-              onClick={exportToCSV}
-              disabled={products.length === 0}
-              type="button"
-            >
-              {selectedProducts.size === 0 ||
-              selectedProducts.size === products.length
-                ? "Exportar todos a CSV"
-                : `Exportar (${selectedProducts.size}) a CSV`}
-            </button>
-          </div>
+            {/* Paginación */}
+            {totalCount > 0 && (
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Mostrando {currentPage * pageSize + 1}–
+                  {Math.min((currentPage + 1) * pageSize, totalCount)} de {totalCount} productos
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePrevPage}
+                    disabled={currentPage <= 0 || loading}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-sm text-gray-600 dark:text-gray-400 px-2">
+                    Página {currentPage + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleNextPage}
+                    disabled={(currentPage + 1) * pageSize >= totalCount || loading}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
         {/* Products Grid */}
         {!loading && products.length > 0 && (
@@ -605,14 +847,21 @@ export default function DashboardPage() {
             {products.map((product, index) => {
               const isSelected = selectedProducts.has(product.ItemId);
               return (
-                <button
+                <div
                   key={`${product.ItemId}-${index}`}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleSelectProduct(product.ItemId)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleSelectProduct(product.ItemId);
+                    }
+                  }}
                   className={`bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 hover:scale-105 relative cursor-pointer ${
                     isSelected ? "shadow-lg shadow-blue-400/60" : ""
                   }`}
-                  style={{ textAlign: "inherit" }} // Para evitar select azul de botón en algunos navegadores
+                  style={{ textAlign: "inherit" }}
                 >
                   {/* Selector */}
                   <input
@@ -683,21 +932,17 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-4">
                       {product.Rating && typeof product.Rating === "number" && (
                         <div className="flex items-center gap-1">
-                          <svg
-                            className="w-4 h-4 text-yellow-400 fill-current"
-                            viewBox="0 0 20 20"
-                          >
-                            <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                          </svg>
+                          <span className="text-yellow-500" title="Valoración del producto">⭐</span>
                           <span className="font-medium">
                             {product.Rating.toFixed(1)}
                           </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">/5 producto</span>
                         </div>
                       )}
                       <span className="text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-full">
                         {typeof product.SalesCount === "number"
-                          ? product.SalesCount
-                          : 0}{" "}
+                          ? product.SalesCount.toLocaleString("es")
+                          : "0"}{" "}
                         vendidos
                       </span>
                     </div>
@@ -705,6 +950,18 @@ export default function DashboardPage() {
                       <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate">
                         🏪 {product.ShopName}
                       </p>
+                    )}
+                    {(product.Weight != null || product.SellerRating != null) && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mb-2">
+                        {product.Weight != null && (
+                          <span>
+                            ⚖️ {product.Weight} {product.WeightUnit ?? "kg"}
+                          </span>
+                        )}
+                        {product.SellerRating != null && (
+                          <span title="Valoración de la tienda (0-5)">🏬 {Number(product.SellerRating).toFixed(1)}/5 tienda</span>
+                        )}
+                      </div>
                     )}
                     {product.PublishDate && sortType === "Ranknew" && (
                       <p className="text-xs text-purple-600 dark:text-purple-400 mb-3 truncate">
@@ -730,7 +987,7 @@ export default function DashboardPage() {
                       </div>
                     )}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

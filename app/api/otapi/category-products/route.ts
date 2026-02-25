@@ -52,10 +52,17 @@ interface OtapiRawProduct {
   ProviderType?: string;
   VendorName?: string;
   VendorDisplayName?: string;
+  VendorScore?: number;
+  VendorRating?: number;
   ConfiguredItems?: ItemConfiguration[];
   ItemConfigurations?: ItemConfiguration[];
   Promotions?: PromotionDefinition[];
   Rating?: number;
+  Weight?: number;
+  GrossWeight?: number;
+  ItemWeight?: number;
+  ActualWeightInfo?: { Type?: string; DisplayName?: string; Weight?: number; Unit?: string };
+  WeightInfos?: Array<{ Type?: string; DisplayName?: string; Weight?: number; Unit?: string }>;
   [key: string]: unknown;
 }
 
@@ -204,6 +211,60 @@ function extractRating(product: OtapiRawProduct): number | undefined {
   return undefined;
 }
 
+function extractWeight(product: OtapiRawProduct): { value: number; unit: string } | undefined {
+  const p = product as OtapiRawProduct & {
+    ActualWeightInfo?: { Weight?: number; Unit?: string };
+    WeightInfos?: Array<{ Weight?: number; Unit?: string }>;
+  };
+  const toUnit = (u?: string) => (u?.toLowerCase() === 'g' ? 'g' : 'kg');
+
+  if (p.ActualWeightInfo && typeof p.ActualWeightInfo.Weight === 'number' && p.ActualWeightInfo.Weight > 0) {
+    return { value: p.ActualWeightInfo.Weight, unit: toUnit(p.ActualWeightInfo.Unit) || 'kg' };
+  }
+  if (p.WeightInfos?.length) {
+    const first = p.WeightInfos[0];
+    if (typeof first.Weight === 'number' && first.Weight > 0) {
+      return { value: first.Weight, unit: toUnit(first.Unit) || 'kg' };
+    }
+  }
+  const asRecord = product as Record<string, unknown>;
+  const directKeys = ['Weight', 'GrossWeight', 'ItemWeight'];
+  for (const key of directKeys) {
+    const val = asRecord[key];
+    if (typeof val === 'number' && val > 0) return { value: val, unit: 'kg' };
+  }
+  if (product.FeaturedValues) {
+    const weightFeature = product.FeaturedValues.find(
+      (x) => x.Name?.toLowerCase().includes('weight') || (x.Value && /[\d.,]+\s*(kg|g|gram)/i.test(x.Value))
+    );
+    if (weightFeature?.Value) {
+      const num = parseFloat(weightFeature.Value.replace(/[^\d.,]/g, '').replace(',', '.'));
+      if (!isNaN(num) && num > 0) {
+        const unit = /(\d+)\s*g\b/i.test(weightFeature.Value) && !/kg/i.test(weightFeature.Value) ? 'g' : 'kg';
+        return { value: num, unit };
+      }
+    }
+  }
+  return undefined;
+}
+
+function extractSellerRating(product: OtapiRawProduct): number | undefined {
+  const p = product as OtapiRawProduct & { VendorScore?: number; VendorRating?: number; SellerRating?: number };
+  if (typeof p.VendorScore === 'number' && p.VendorScore >= 0) return p.VendorScore;
+  if (typeof p.VendorRating === 'number' && p.VendorRating >= 0) return p.VendorRating;
+  if (typeof p.SellerRating === 'number' && p.SellerRating >= 0) return p.SellerRating;
+  if (product.FeaturedValues) {
+    const f = product.FeaturedValues.find(
+      (x) => x.Name?.toLowerCase().includes('vendor') && x.Name?.toLowerCase().includes('rating')
+    ) || product.FeaturedValues.find((x) => x.Name?.toLowerCase() === 'sellerrating');
+    if (f?.Value) {
+      const val = parseFloat(f.Value);
+      if (!isNaN(val) && val >= 0) return val;
+    }
+  }
+  return undefined;
+}
+
 function buildSearchXml(categoryId: string, sortType: string): string {
   let orderBy = 'Volume:Desc';
   switch (sortType) {
@@ -230,10 +291,18 @@ async function getProductFullInfo(
     url.searchParams.append('language', language);
     url.searchParams.append('itemId', itemId);
     const response = await axios.get(url.toString(), { timeout: 5000 });
-    if (response.data.ErrorCode === 0 || response.data.ErrorCode === '0' || response.data.ErrorCode === 'Ok') {
-      return response.data.OtapiItemFullInfo as OtapiRawProduct;
+    if (response.data.ErrorCode !== 0 && response.data.ErrorCode !== '0' && response.data.ErrorCode !== 'Ok') {
+      return null;
     }
-    return null;
+    const full = response.data.OtapiItemFullInfo as Record<string, unknown> | null;
+    if (!full || typeof full !== 'object') return null;
+    // Algunas APIs devuelven el ítem anidado en .Item; el peso puede estar en el nivel superior
+    const item = (full.Item as Record<string, unknown>) || full;
+    const merged = { ...item, ...full } as OtapiRawProduct;
+    if (item && item !== full && typeof item === 'object') {
+      Object.keys(item).forEach((k) => { (merged as Record<string, unknown>)[k] = (item as Record<string, unknown>)[k]; });
+    }
+    return merged;
   } catch (error) {
     return null;
   }
@@ -309,6 +378,14 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
     imageUrl = product.Pictures[0].Url || '';
   }
   const shopName = product.VendorDisplayName || product.VendorName || product.BrandName;
+  const weightInfo = extractWeight(product);
+  const rawSellerRating = extractSellerRating(product);
+  const sellerRating =
+    rawSellerRating != null
+      ? rawSellerRating > 5
+        ? Math.round((rawSellerRating / 20) * 5 * 10) / 10
+        : rawSellerRating
+      : undefined;
   return {
     ItemId: product.Id,
     Title: title,
@@ -324,6 +401,9 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
     ShopName: shopName,
     ProviderType: product.ProviderType,
     PublishDate: publishDate,
+    Weight: weightInfo?.value,
+    WeightUnit: weightInfo?.unit,
+    SellerRating: sellerRating,
   };
 }
 
@@ -366,6 +446,21 @@ export async function GET(request: NextRequest) {
         RequestTime: Date.now(),
       };
       return NextResponse.json(emptyResponse);
+    }
+
+    // En desarrollo: log para ver estructura real y localizar peso
+    if (process.env.NODE_ENV === 'development' && rawProducts[0]) {
+      const sample = rawProducts[0] as Record<string, unknown>;
+      const keys = Object.keys(sample);
+      const weightKeys = keys.filter((k) => k.toLowerCase().includes('weight'));
+      const featured = (sample.FeaturedValues as Array<{ Name?: string; Value?: string }> | undefined) || [];
+      const weightFeatures = featured.filter(
+        (f) => f.Name?.toLowerCase().includes('weight') || f.Value?.toLowerCase().includes('weight')
+      );
+      console.log('📦 [category-products] Sample product keys:', keys.sort().join(', '));
+      if (weightKeys.length) console.log('📦 [category-products] Weight-related keys:', weightKeys, weightKeys.map((k) => sample[k]));
+      if (weightFeatures.length) console.log('📦 [category-products] FeaturedValues (weight):', weightFeatures);
+      if (!weightKeys.length && !weightFeatures.length) console.log('📦 [category-products] No weight fields found in sample. Full keys:', keys);
     }
 
     const mappedProducts = rawProducts.map((product) => mapProduct(product, rates));

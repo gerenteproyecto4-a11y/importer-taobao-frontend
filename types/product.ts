@@ -16,6 +16,9 @@ export interface OtapiItem {
   ProviderType?: string;
   PublishDate?: string;       // Publication date of the product
   ConfigurationId?: string;   // Configuration/SKU ID if exists
+  Weight?: number;
+  WeightUnit?: string;
+  SellerRating?: number;
 }
 
 export interface OtapiCategory {

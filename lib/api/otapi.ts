@@ -57,7 +57,7 @@ export class OtApiService {
     language?: string;
     framePosition?: number;
     frameSize?: number;
-    sortType?: string;  // Agregar este parámetro
+    sortType?: string;
   }): Promise<OtapiResponse<OtapiItem>> {
     try {
       const response = await axios.get<OtapiResponse<OtapiItem>>(
@@ -68,6 +68,45 @@ export class OtApiService {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         throw new Error(error.response?.data?.error || 'Failed to fetch products');
+      }
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
+  async getCategoryRootPath(
+    instanceKey: string,
+    categoryId: string,
+    language: string = 'es'
+  ): Promise<OtapiResponse<OtapiCategory>> {
+    try {
+      const response = await axios.get<OtapiResponse<OtapiCategory>>(
+        '/api/otapi/category-root-path',
+        { params: { instanceKey, categoryId, language } }
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.error || 'Failed to get category path');
+      }
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
+  async getItemRootPath(
+    instanceKey: string,
+    itemId: string,
+    language: string = 'es',
+    taoBaoCategoryId?: string
+  ): Promise<OtapiResponse<OtapiCategory>> {
+    try {
+      const response = await axios.get<OtapiResponse<OtapiCategory>>(
+        '/api/otapi/item-root-path',
+        { params: { instanceKey, itemId, language, taoBaoCategoryId } }
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.error || 'Failed to get item path');
       }
       throw new Error('An unexpected error occurred');
     }
