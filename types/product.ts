@@ -13,11 +13,17 @@ export interface OtapiItem {
   Rating?: number;
   ReviewCount?: number;
   ShopName?: string;
+  BrandName?: string;
+  VariantCount?: number;
   ProviderType?: string;
   PublishDate?: string;       // Publication date of the product
   ConfigurationId?: string;   // Configuration/SKU ID if exists
   Weight?: number;
   WeightUnit?: string;
+  Length?: number;
+  Width?: number;
+  Height?: number;
+  DimensionsUnit?: string;
   SellerRating?: number;
 }
 

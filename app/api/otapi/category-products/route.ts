@@ -265,6 +265,129 @@ function extractSellerRating(product: OtapiRawProduct): number | undefined {
   return undefined;
 }
 
+function extractDimensions(product: OtapiRawProduct): { length?: number; width?: number; height?: number; unit: string } | undefined {
+  const asRecord = product as Record<string, unknown>;
+  const toNum = (v: unknown): number | undefined => {
+    if (typeof v === 'number' && !isNaN(v)) return v > 0 ? v : undefined;
+    if (typeof v === 'string') return parseFloat(v.replace(/[^\d.,]/g, '').replace(',', '.')) || undefined;
+    return undefined;
+  };
+
+  let length: number | undefined;
+  let width: number | undefined;
+  let height: number | undefined;
+
+  const phys = asRecord.PhysicalParameters;
+  if (phys != null && typeof phys === 'object') {
+    if (Array.isArray(phys)) {
+      for (const item of phys) {
+        const it = item as Record<string, unknown>;
+        const name = String(it?.Name ?? it?.name ?? '').toLowerCase();
+        const val = toNum(it?.Value ?? it?.value);
+        if (val === undefined || val <= 0) continue;
+        if (length === undefined && (name.includes('length') || name.includes('longitud') || name === 'l')) length = val;
+        else if (width === undefined && (name.includes('width') || name.includes('ancho') || name === 'w')) width = val;
+        else if (height === undefined && (name.includes('height') || name.includes('alto') || name === 'h')) height = val;
+      }
+    } else {
+      const physKeys = Object.keys(phys);
+      const dimKeys = ['Length', 'Width', 'Height', 'ItemLength', 'ItemWidth', 'ItemHeight', 'PackageLength', 'PackageWidth', 'PackageHeight'];
+      for (const key of dimKeys) {
+        const val = toNum((phys as Record<string, unknown>)[key]);
+        if (val === undefined || val <= 0) continue;
+        const k = key.toLowerCase();
+        if (k.includes('length') && length === undefined) length = val;
+        else if (k.includes('width') && width === undefined) width = val;
+        else if (k.includes('height') && height === undefined) height = val;
+      }
+    }
+  }
+
+  const directKeys = [
+    'Length', 'Width', 'Height',
+    'ItemLength', 'ItemWidth', 'ItemHeight',
+    'PackageLength', 'PackageWidth', 'PackageHeight',
+    'length', 'width', 'height',
+  ];
+  for (const key of directKeys) {
+    const val = toNum(asRecord[key]);
+    if (val === undefined) continue;
+    const k = key.toLowerCase();
+    if (k.includes('length') && length === undefined) length = val;
+    else if (k.includes('width') && width === undefined) width = val;
+    else if (k.includes('height') && height === undefined) height = val;
+  }
+
+  if (product.FeaturedValues) {
+    for (const f of product.FeaturedValues) {
+      const name = (f.Name ?? '').toLowerCase();
+      const val = toNum(f.Value);
+      if (val === undefined || val <= 0) continue;
+      if (length === undefined && (name.includes('length') || name.includes('longitud') || name === 'l')) length = val;
+      else if (width === undefined && (name.includes('width') || name.includes('ancho') || name === 'w')) width = val;
+      else if (height === undefined && (name.includes('height') || name.includes('alto') || name === 'h')) height = val;
+    }
+
+    const combined = product.FeaturedValues.find(
+      (f) => f.Value && /[\d.,]+\s*[*x×]\s*[\d.,]+\s*[*x×]\s*[\d.,]+/i.test(f.Value)
+    );
+    if (combined?.Value && (length === undefined || width === undefined || height === undefined)) {
+      const parts = combined.Value.replace(/,/g, '.').split(/[*x×]/).map((s) => parseFloat(s.replace(/[^\d.]/g, '')));
+      const nums = parts.filter((n) => !isNaN(n) && n > 0);
+      if (nums.length >= 3) {
+        if (length === undefined) length = nums[0];
+        if (width === undefined) width = nums[1];
+        if (height === undefined) height = nums[2];
+      } else if (nums.length === 1 && length === undefined && width === undefined && height === undefined) {
+        length = width = height = nums[0];
+      }
+    }
+  }
+
+  const attrs = asRecord.Attributes;
+  if (Array.isArray(attrs) && (length === undefined || width === undefined || height === undefined)) {
+    const lengthKeys = ['length', 'longitud', 'long', '长', '深度', 'depth'];
+    const widthKeys = ['width', 'ancho', 'wide', '宽'];
+    const heightKeys = ['height', 'alto', '高', '厚', 'thickness'];
+    const dimKeys = ['dimension', '尺寸', '规格', 'package', 'empaque', 'measure', '体积', '包装'];
+    const isSizeVariantLabel = (v: string) => /inch|inches|码|号|size\s*[:\-]|\[.+\]/.test(v) || /^\s*\d+\s*[-–]\s*inch/i.test(v);
+    for (const a of attrs) {
+      const row = a as Record<string, unknown>;
+      const name = String(row?.PropertyName ?? row?.OriginalPropertyName ?? row?.name ?? '').toLowerCase();
+      const origName = String(row?.OriginalPropertyName ?? '').toLowerCase();
+      const valueStr = String(row?.Value ?? row?.OriginalValue ?? row?.value ?? '');
+      const combined = `${name} ${origName}`;
+      if ((combined.includes('size') || combined.includes('尺寸')) && isSizeVariantLabel(valueStr)) continue;
+      const val = toNum(row?.Value ?? row?.OriginalValue ?? row?.value);
+      if (val !== undefined && val > 0) {
+        if (length === undefined && (lengthKeys.some((k) => combined.includes(k)) || /^l\b|length$/i.test(name))) length = val;
+        else if (width === undefined && (widthKeys.some((k) => combined.includes(k)) || /^w\b|width$/i.test(name))) width = val;
+        else if (height === undefined && (heightKeys.some((k) => combined.includes(k)) || /^h\b|height$/i.test(name))) height = val;
+      }
+      if ((length === undefined || width === undefined || height === undefined) && dimKeys.some((k) => combined.includes(k)) && !isSizeVariantLabel(valueStr)) {
+        const match = valueStr.match(/[\d.,]+\s*[*x×]\s*[\d.,]+\s*[*x×]\s*[\d.,]+/);
+        if (match) {
+          const parts = match[0].replace(/,/g, '.').split(/[*x×]/).map((s) => parseFloat(s.replace(/[^\d.]/g, '')));
+          const nums = parts.filter((n) => !isNaN(n) && n > 0);
+          if (nums.length >= 3) {
+            if (length === undefined) length = nums[0];
+            if (width === undefined) width = nums[1];
+            if (height === undefined) height = nums[2];
+          }
+        }
+      }
+    }
+  }
+
+  if (length === undefined && width === undefined && height === undefined) return undefined;
+  const MIN_CM = 3;
+  const validL = length != null && length >= MIN_CM ? length : undefined;
+  const validW = width != null && width >= MIN_CM ? width : undefined;
+  const validH = height != null && height >= MIN_CM ? height : undefined;
+  if (validL === undefined && validW === undefined && validH === undefined) return undefined;
+  return { length: validL, width: validW, height: validH, unit: 'cm' };
+}
+
 function buildSearchXml(categoryId: string, sortType: string): string {
   let orderBy = 'Volume:Desc';
   switch (sortType) {
@@ -280,7 +403,7 @@ function buildSearchXml(categoryId: string, sortType: string): string {
   </SearchItemsParameters>`;
 }
 
-async function getProductFullInfo(
+export async function getProductFullInfo(
   itemId: string,
   instanceKey: string,
   language: string
@@ -364,6 +487,22 @@ function extractPublishDate(featuredValues?: FeaturedValue[]): string | undefine
   return undefined;
 }
 
+function extractReviewCount(product: OtapiRawProduct): number | undefined {
+  const asRecord = product as Record<string, unknown>;
+  if (typeof asRecord.ReviewCount === 'number' && asRecord.ReviewCount >= 0) return asRecord.ReviewCount as number;
+  if (typeof asRecord.CommentCount === 'number' && asRecord.CommentCount >= 0) return asRecord.CommentCount as number;
+  if (product.FeaturedValues) {
+    const reviewFeature = product.FeaturedValues.find(f =>
+      f.Name?.toLowerCase().includes('review') || f.Name?.toLowerCase().includes('comment')
+    );
+    if (reviewFeature?.Value) {
+      const val = parseInt(reviewFeature.Value.replace(/\D/g, ''), 10);
+      if (!isNaN(val) && val >= 0) return val;
+    }
+  }
+  return undefined;
+}
+
 function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number }) {
   const title = product.Title || product.OriginalTitle || 'Sin título';
   const priceRMB = extractCorrectPrice(product);
@@ -379,6 +518,7 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
   }
   const shopName = product.VendorDisplayName || product.VendorName || product.BrandName;
   const weightInfo = extractWeight(product);
+  const dimensions = extractDimensions(product);
   const rawSellerRating = extractSellerRating(product);
   const sellerRating =
     rawSellerRating != null
@@ -386,6 +526,8 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
         ? Math.round((rawSellerRating / 20) * 5 * 10) / 10
         : rawSellerRating
       : undefined;
+  const configs = product.ConfiguredItems || product.ItemConfigurations;
+  const variantCount = configs?.length ?? 0;
   return {
     ItemId: product.Id,
     Title: title,
@@ -398,13 +540,32 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
     Currency: 'CNY',
     SalesCount: salesCount,
     Rating: rating,
+    ReviewCount: extractReviewCount(product),
     ShopName: shopName,
+    BrandName: product.BrandName,
+    VariantCount: variantCount > 0 ? variantCount : undefined,
     ProviderType: product.ProviderType,
     PublishDate: publishDate,
     Weight: weightInfo?.value,
     WeightUnit: weightInfo?.unit,
+    Length: dimensions?.length,
+    Width: dimensions?.width,
+    Height: dimensions?.height,
+    DimensionsUnit: dimensions?.unit,
     SellerRating: sellerRating,
   };
+}
+
+export async function fetchAndMapItemFullInfo(
+  itemId: string,
+  instanceKey: string,
+  language: string
+): Promise<ReturnType<typeof mapProduct> | null> {
+  const product = await getProductFullInfo(itemId, instanceKey, language);
+  if (!product) return null;
+  const currencyData = await getCachedRates();
+  const rates = { USD: currencyData.rates.USD, COP: currencyData.rates.COP };
+  return mapProduct(product, rates);
 }
 
 export async function GET(request: NextRequest) {
@@ -461,6 +622,29 @@ export async function GET(request: NextRequest) {
       if (weightKeys.length) console.log('📦 [category-products] Weight-related keys:', weightKeys, weightKeys.map((k) => sample[k]));
       if (weightFeatures.length) console.log('📦 [category-products] FeaturedValues (weight):', weightFeatures);
       if (!weightKeys.length && !weightFeatures.length) console.log('📦 [category-products] No weight fields found in sample. Full keys:', keys);
+      
+      const dimensionKeywords = ['length', 'width', 'height', 'dimension', 'size', 'package', 'longitud', 'ancho', 'alto', 'cm', 'mm'];
+      const dimensionKeys = keys.filter((k) => dimensionKeywords.some((kw) => k.toLowerCase().includes(kw)));
+      const dimensionFeatures = featured.filter(
+        (f) =>
+          dimensionKeywords.some((kw) => (f.Name ?? '').toLowerCase().includes(kw)) ||
+          (f.Value && /[\d.,]+\s*[*x×]\s*[\d.,]+/.test(f.Value))
+      );
+      console.log('📐 [category-products] Dimension-related keys:', dimensionKeys.length ? dimensionKeys : 'none', dimensionKeys.length ? dimensionKeys.map((k) => ({ key: k, value: sample[k] })) : '');
+      console.log('📐 [category-products] FeaturedValues (dimensions):', dimensionFeatures.length ? dimensionFeatures : 'none');
+      if (!dimensionKeys.length && !dimensionFeatures.length) console.log('📐 [category-products] No dimension fields in sample. All FeaturedValues names:', featured.map((f) => f.Name));
+      // PhysicalParameters y Attributes suelen traer dimensiones en OTAPI/Taobao
+      if (sample.PhysicalParameters != null) console.log('📐 [category-products] PhysicalParameters:', JSON.stringify(sample.PhysicalParameters));
+      const attrs = sample.Attributes as Array<{ PropertyName?: string; OriginalPropertyName?: string; Value?: unknown }> | undefined;
+      if (Array.isArray(attrs)) {
+        const dimAttrKeywords = ['length', 'width', 'height', 'dimension', 'size', 'package', '长', '宽', '高', '尺寸', '规格', '厚', '深'];
+        const dimensionAttrs = attrs.filter(
+          (a) =>
+            dimAttrKeywords.some((kw) => (a.PropertyName ?? '').toLowerCase().includes(kw) || (a.OriginalPropertyName ?? '').includes(kw))
+        );
+        if (dimensionAttrs.length) console.log('📐 [category-products] Attributes (dimension-related):', dimensionAttrs.map((a) => ({ PropertyName: a.PropertyName, OriginalPropertyName: a.OriginalPropertyName, Value: a.Value })));
+        else console.log('📐 [category-products] All Attribute PropertyNames:', attrs.map((a) => a.PropertyName ?? a.OriginalPropertyName));
+      }
     }
 
     const mappedProducts = rawProducts.map((product) => mapProduct(product, rates));
