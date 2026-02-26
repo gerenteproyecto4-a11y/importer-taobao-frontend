@@ -24,6 +24,7 @@ export interface OtapiItem {
   Width?: number;
   Height?: number;
   DimensionsUnit?: string;
+  VolumetricWeightKg?: number;
   SellerRating?: number;
 }
 

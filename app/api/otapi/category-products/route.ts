@@ -528,6 +528,12 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
       : undefined;
   const configs = product.ConfiguredItems || product.ItemConfigurations;
   const variantCount = configs?.length ?? 0;
+  const L = dimensions?.length ?? 0;
+  const W = dimensions?.width ?? 0;
+  const H = dimensions?.height ?? 0;
+  const hasDimensions = L >= 3 && W >= 3 && H >= 3;
+  const VOLUMETRIC_FACTOR = 6000;
+  const volumetricWeightKg = hasDimensions ? (L * W * H) / VOLUMETRIC_FACTOR : undefined;
   return {
     ItemId: product.Id,
     Title: title,
@@ -552,6 +558,7 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
     Width: dimensions?.width,
     Height: dimensions?.height,
     DimensionsUnit: dimensions?.unit,
+    VolumetricWeightKg: volumetricWeightKg != null ? Math.round(volumetricWeightKg * 100) / 100 : undefined,
     SellerRating: sellerRating,
   };
 }

@@ -960,29 +960,24 @@ export default function DashboardPage() {
                           )}
                         </div>
                       )}
-                      {(product.Weight != null || product.SellerRating != null || product.VariantCount != null || product.Length != null || product.Width != null || product.Height != null) && (
+                      {(product.Weight != null || product.SellerRating != null || product.VariantCount != null || product.VolumetricWeightKg != null || product.Length != null || product.Width != null || product.Height != null) && (
                         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mb-2">
                           {product.Weight != null && (
                             <span>
                               ⚖️ {product.Weight} {product.WeightUnit ?? "kg"}
                             </span>
                           )}
-                          {(product.Length != null || product.Width != null || product.Height != null) && (() => {
-                            const L = product.Length ?? 0;
-                            const W = product.Width ?? 0;
-                            const H = product.Height ?? 0;
-                            const hasThree = L > 0 && W > 0 && H > 0;
-                            const volumeCm3 = hasThree ? L * W * H : 0;
-                            if (!hasThree && (L < 3 && W < 3 && H < 3)) return null;
-                            if (hasThree) {
-                              const volL = volumeCm3 / 1000;
-                              const label = volL >= 1 ? `${volL.toFixed(1)} L` : `${Math.round(volumeCm3)} cm³`;
+                          {(product.VolumetricWeightKg != null || (product.Length != null || product.Width != null || product.Height != null)) && (() => {
+                            if (product.VolumetricWeightKg != null) {
                               return (
-                                <span title={`Medidas: ${L} × ${W} × ${H} cm`}>
-                                  📐 {label}
+                                <span title={`Peso volumétrico = (L×W×H)/6000. Medidas: ${product.Length ?? "?"} × ${product.Width ?? "?"} × ${product.Height ?? "?"} cm. Se factura el mayor entre peso real y peso vol.`}>
+                                  📦 Peso vol.: {product.VolumetricWeightKg.toFixed(2)} kg
                                 </span>
                               );
                             }
+                            const L = product.Length ?? 0;
+                            const W = product.Width ?? 0;
+                            const H = product.Height ?? 0;
                             const dims = [L, W, H].filter((n) => n > 0);
                             if (dims.length === 0 || (dims.length === 1 && dims[0]! < 3)) return null;
                             return (
