@@ -111,4 +111,26 @@ export class OtApiService {
       throw new Error('An unexpected error occurred');
     }
   }
+
+  async getItemFullInfo(
+    instanceKey: string,
+    itemId: string,
+    language: string = 'es'
+  ): Promise<OtapiItem | null> {
+    try {
+      const response = await axios.get<OtapiItem>(
+        '/api/otapi/item-full-info',
+        { params: { instanceKey, itemId, language } }
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return null;
+      }
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.error || 'Failed to fetch item full info');
+      }
+      throw new Error('An unexpected error occurred');
+    }
+  }
 }

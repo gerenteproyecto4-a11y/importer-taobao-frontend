@@ -843,7 +843,7 @@ export default function DashboardPage() {
         )}
         {/* Products Grid */}
         {!loading && products.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 items-stretch">
             {products.map((product, index) => {
               const isSelected = selectedProducts.has(product.ItemId);
               return (
@@ -858,9 +858,8 @@ export default function DashboardPage() {
                       handleSelectProduct(product.ItemId);
                     }
                   }}
-                  className={`bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 hover:scale-105 relative cursor-pointer ${
-                    isSelected ? "shadow-lg shadow-blue-400/60" : ""
-                  }`}
+                  className={`flex flex-col h-full min-h-0 bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300 relative cursor-pointer ${isSelected ? "shadow-lg shadow-blue-400/60" : ""
+                    }`}
                   style={{ textAlign: "inherit" }}
                 >
                   {/* Selector */}
@@ -872,7 +871,7 @@ export default function DashboardPage() {
                     readOnly
                   />
                   {/* Product Image */}
-                  <div className="relative h-64 bg-gray-200 dark:bg-gray-700">
+                  <div className="relative h-64 flex-shrink-0 bg-gray-200 dark:bg-gray-700">
                     {product.ImageUrl ? (
                       <img
                         src={product.ImageUrl}
@@ -912,80 +911,128 @@ export default function DashboardPage() {
                       </div>
                     )}
                   </div>
-                  {/* Product Info */}
-                  <div className="p-4">
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-white line-clamp-2 mb-3 h-10 leading-5">
-                      {product.Title || "Producto sin título"}
-                    </h3>
-                    <div className="flex items-baseline gap-2 mb-3">
-                      <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                        {formatPrice(product)}
-                      </span>
-                      {product.OriginalPrice &&
-                        typeof product.OriginalPrice === "number" &&
-                        product.OriginalPrice > product.Price && (
-                          <span className="text-sm text-gray-500 line-through">
-                            ¥{product.OriginalPrice.toFixed(2)}
-                          </span>
+                  <div className="flex flex-col flex-1 min-h-0 p-4 flex-basis-0">
+                    <div className="flex-1 min-h-[200px] flex flex-col">
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white line-clamp-2 mb-3 h-10 leading-5">
+                        {product.Title || "Producto sin título"}
+                      </h3>
+                      <div className="flex items-baseline gap-2 mb-3">
+                        <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                          {formatPrice(product)}
+                        </span>
+                        {product.OriginalPrice &&
+                          typeof product.OriginalPrice === "number" &&
+                          product.OriginalPrice > product.Price && (
+                            <span className="text-sm text-gray-500 line-through">
+                              ¥{product.OriginalPrice.toFixed(2)}
+                            </span>
+                          )}
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-4">
+                        {product.Rating && typeof product.Rating === "number" && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-yellow-500" title="Valoración del producto">⭐</span>
+                            <span className="font-medium">
+                              {product.Rating.toFixed(1)}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">/5</span>
+                            {product.ReviewCount != null && product.ReviewCount > 0 && (
+                              <span className="text-xs text-gray-500 dark:text-gray-400" title="Reseñas">
+                                ({product.ReviewCount.toLocaleString("es")} reseñas)
+                              </span>
+                            )}
+                          </div>
                         )}
-                    </div>
-                    <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-4">
-                      {product.Rating && typeof product.Rating === "number" && (
-                        <div className="flex items-center gap-1">
-                          <span className="text-yellow-500" title="Valoración del producto">⭐</span>
-                          <span className="font-medium">
-                            {product.Rating.toFixed(1)}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">/5 producto</span>
+                        <span className="text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-full">
+                          {typeof product.SalesCount === "number"
+                            ? product.SalesCount.toLocaleString("es")
+                            : "0"}{" "}
+                          vendidos
+                        </span>
+                      </div>
+                      {(product.ShopName || product.BrandName) && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 space-y-0.5">
+                          {product.BrandName && (
+                            <p className="truncate" title="Marca">🏷️ {product.BrandName}</p>
+                          )}
+                          {product.ShopName && (
+                            <p className="truncate" title="Tienda">🏪 {product.ShopName}</p>
+                          )}
                         </div>
                       )}
-                      <span className="text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-full">
-                        {typeof product.SalesCount === "number"
-                          ? product.SalesCount.toLocaleString("es")
-                          : "0"}{" "}
-                        vendidos
-                      </span>
+                      {(product.Weight != null || product.SellerRating != null || product.VariantCount != null || product.Length != null || product.Width != null || product.Height != null) && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mb-2">
+                          {product.Weight != null && (
+                            <span>
+                              ⚖️ {product.Weight} {product.WeightUnit ?? "kg"}
+                            </span>
+                          )}
+                          {(product.Length != null || product.Width != null || product.Height != null) && (() => {
+                            const L = product.Length ?? 0;
+                            const W = product.Width ?? 0;
+                            const H = product.Height ?? 0;
+                            const hasThree = L > 0 && W > 0 && H > 0;
+                            const volumeCm3 = hasThree ? L * W * H : 0;
+                            if (!hasThree && (L < 3 && W < 3 && H < 3)) return null;
+                            if (hasThree) {
+                              const volL = volumeCm3 / 1000;
+                              const label = volL >= 1 ? `${volL.toFixed(1)} L` : `${Math.round(volumeCm3)} cm³`;
+                              return (
+                                <span title={`Medidas: ${L} × ${W} × ${H} cm`}>
+                                  📐 {label}
+                                </span>
+                              );
+                            }
+                            const dims = [L, W, H].filter((n) => n > 0);
+                            if (dims.length === 0 || (dims.length === 1 && dims[0]! < 3)) return null;
+                            return (
+                              <span title="Medidas (L × W × H)">
+                                📐 {dims.join(" × ")} {product.DimensionsUnit ?? "cm"}
+                              </span>
+                            );
+                          })()}
+                          {product.SellerRating != null && (
+                            <span title="Valoración de la tienda (0-5)">🏬 {Number(product.SellerRating).toFixed(1)}/5 tienda</span>
+                          )}
+                          {product.VariantCount != null && product.VariantCount > 0 && (
+                            <span title="Variantes/SKUs">📦 {product.VariantCount} variantes</span>
+                          )}
+                        </div>
+                      )}
+                      {product.PublishDate && (
+                        <p className="text-xs text-purple-600 dark:text-purple-400 mb-2 truncate">
+                          📅 {new Date(product.PublishDate).toLocaleDateString("es-ES")}
+                        </p>
+                      )}
                     </div>
-                    {product.ShopName && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate">
-                        🏪 {product.ShopName}
-                      </p>
-                    )}
-                    {(product.Weight != null || product.SellerRating != null) && (
-                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mb-2">
-                        {product.Weight != null && (
-                          <span>
-                            ⚖️ {product.Weight} {product.WeightUnit ?? "kg"}
+                    {/* Fijado abajo: Taobao ID + botón para que todas las cards se vean iguales */}
+                    <div className="flex-shrink-0 pt-2 mt-auto border-t border-gray-200 dark:border-gray-600">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        {product.ProviderType && (
+                          <span className="text-xs font-medium bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded" title="Proveedor">
+                            {product.ProviderType}
                           </span>
                         )}
-                        {product.SellerRating != null && (
-                          <span title="Valoración de la tienda (0-5)">🏬 {Number(product.SellerRating).toFixed(1)}/5 tienda</span>
-                        )}
+                        <span className="text-xs text-gray-400 dark:text-gray-500 font-mono truncate" title="ID para catálogo/soporte">
+                          Taobao ID: {product.ItemId}
+                        </span>
                       </div>
-                    )}
-                    {product.PublishDate && sortType === "Ranknew" && (
-                      <p className="text-xs text-purple-600 dark:text-purple-400 mb-3 truncate">
-                        📅 Publicado:{" "}
-                        {new Date(product.PublishDate).toLocaleDateString(
-                          "es-ES",
-                        )}
-                      </p>
-                    )}
-                    {product.ItemUrl ? (
-                      <a
-                        href={product.ItemUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block w-full text-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg transition-all font-medium text-sm shadow-md hover:shadow-lg"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Ver en Taobao →
-                      </a>
-                    ) : (
-                      <div className="block w-full text-center px-4 py-2.5 bg-gray-400 text-white rounded-lg font-medium text-sm cursor-not-allowed">
-                        URL no disponible
-                      </div>
-                    )}
+                      {product.ItemUrl ? (
+                        <a
+                          href={product.ItemUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block w-full text-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg transition-all font-medium text-sm shadow-md hover:shadow-lg"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Ver en Taobao →
+                        </a>
+                      ) : (
+                        <div className="block w-full text-center px-4 py-2.5 bg-gray-400 text-white rounded-lg font-medium text-sm cursor-not-allowed">
+                          URL no disponible
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
