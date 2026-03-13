@@ -56,6 +56,9 @@ interface OtapiRawProduct {
   VendorRating?: number;
   ConfiguredItems?: ItemConfiguration[];
   ItemConfigurations?: ItemConfiguration[];
+  HasHierarchicalConfigurators?: boolean;
+  Configurable?: boolean;
+  OtapiItemConfigurable?: boolean;
   Promotions?: PromotionDefinition[];
   Rating?: number;
   Weight?: number;
@@ -79,11 +82,34 @@ interface SearchItemsFrameResponse {
   RequestTime?: number;
 }
 
-/**
- * Extrae el precio correcto en CNY (yuanes) de promociones/configuraciones/base
- */
+const FULL_INFO_CACHE_TTL_MS = 15 * 60 * 1000;
+const FULL_INFO_CACHE_MAX = 500;
+const fullInfoCache = new Map<string, { raw: OtapiRawProduct; expiresAt: number }>();
+
+function getCachedFullInfo(itemId: string): OtapiRawProduct | null {
+  const entry = fullInfoCache.get(itemId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    fullInfoCache.delete(itemId);
+    return null;
+  }
+  return entry.raw;
+}
+
+function setCachedFullInfo(itemId: string, raw: OtapiRawProduct): void {
+  if (fullInfoCache.size >= FULL_INFO_CACHE_MAX) {
+    const now = Date.now();
+    for (const [id, e] of fullInfoCache) {
+      if (e.expiresAt < now) fullInfoCache.delete(id);
+    }
+    if (fullInfoCache.size >= FULL_INFO_CACHE_MAX) {
+      fullInfoCache.clear();
+    }
+  }
+  fullInfoCache.set(itemId, { raw, expiresAt: Date.now() + FULL_INFO_CACHE_TTL_MS });
+}
+
 function extractCorrectPrice(product: OtapiRawProduct): number {
-  // 1. PRIORIDAD: PROMOCIONES
   if (product.Promotions && product.Promotions.length > 0) {
     for (const promo of product.Promotions) {
       if (!promo.Price) continue;
@@ -97,7 +123,6 @@ function extractCorrectPrice(product: OtapiRawProduct): number {
       }
     }
   }
-  // 2. CONFIGURACIONES: mínimo precio válido en CNY
   const configs = product.ConfiguredItems || product.ItemConfigurations;
   if (configs && configs.length > 0) {
     const prices: number[] = [];
@@ -115,7 +140,6 @@ function extractCorrectPrice(product: OtapiRawProduct): number {
       return Math.min(...prices);
     }
   }
-  // 3. PRECIO BASE
   const directPrice = product.Price;
   if (typeof directPrice === 'object' && directPrice !== null) {
     const priceObj = directPrice as MoneyObject;
@@ -127,17 +151,12 @@ function extractCorrectPrice(product: OtapiRawProduct): number {
   return 0;
 }
 
-/**
- * Extrae el número de ventas desde promociones, featuredValues o configs
- */
 function extractSalesCount(product: OtapiRawProduct): number {
-  // 1. PROMOCIONES
   if (product.Promotions) {
     for (const promo of product.Promotions) {
       if (typeof promo.SalesCount === 'number' && promo.SalesCount > 0) {
         return promo.SalesCount;
       }
-      // Buscar ventas también en promo.FeaturedValues
       if (promo.FeaturedValues) {
         const salesFeature = promo.FeaturedValues.find(f => f.Name?.toLowerCase().includes('sales'));
         if (salesFeature) {
@@ -147,7 +166,6 @@ function extractSalesCount(product: OtapiRawProduct): number {
       }
     }
   }
-  // 2. SALES EN FEATURED VALUES
   if (product.FeaturedValues) {
     const salesFeature = product.FeaturedValues.find(f =>
       f.Name?.toLowerCase().includes('sales')
@@ -157,7 +175,6 @@ function extractSalesCount(product: OtapiRawProduct): number {
       if (!isNaN(val)) return val;
     }
   }
-  // 3. CONFIGS: suma todos los SKUs
   const configs = product.ConfiguredItems || product.ItemConfigurations;
   if (configs && configs.length > 0) {
     const totalSales = configs.reduce(
@@ -166,23 +183,17 @@ function extractSalesCount(product: OtapiRawProduct): number {
     );
     if (totalSales > 0) return totalSales;
   }
-  // 4. VOLUMEN BASE SI NADA MÁS
   if (typeof product.SalesCount === 'number' && product.SalesCount > 0) return product.SalesCount;
   if (typeof product.Volume === 'number' && product.Volume > 0) return product.Volume;
   return 0;
 }
 
-/**
- * Extrae el rating de promociones, featuredValues o campo principal
- */
 function extractRating(product: OtapiRawProduct): number | undefined {
-  // 1. PROMOCIONES
   if (product.Promotions) {
     for (const promo of product.Promotions) {
       if (typeof promo.Rating === 'number' && promo.Rating > 0) {
         return promo.Rating;
       }
-      // Buscar rating también en promo.FeaturedValues
       if (promo.FeaturedValues) {
         const ratingFeature = promo.FeaturedValues.find(f =>
           f.Name?.toLowerCase().includes('rating') ||
@@ -195,7 +206,6 @@ function extractRating(product: OtapiRawProduct): number | undefined {
       }
     }
   }
-  // 2. RATING EN FEATURED VALUES
   if (product.FeaturedValues) {
     const ratingFeature = product.FeaturedValues.find(f =>
       f.Name?.toLowerCase().includes('rating') ||
@@ -206,7 +216,6 @@ function extractRating(product: OtapiRawProduct): number | undefined {
       if (!isNaN(val)) return val * 5;
     }
   }
-  // 3. RATING BASE
   if (typeof product.Rating === 'number' && product.Rating > 0) return product.Rating;
   return undefined;
 }
@@ -408,6 +417,9 @@ export async function getProductFullInfo(
   instanceKey: string,
   language: string
 ): Promise<OtapiRawProduct | null> {
+  const cached = getCachedFullInfo(itemId);
+  if (cached) return cached;
+
   try {
     const url = new URL('http://otapi.net/service-json/GetItemFullInfo');
     url.searchParams.append('instanceKey', instanceKey);
@@ -419,16 +431,73 @@ export async function getProductFullInfo(
     }
     const full = response.data.OtapiItemFullInfo as Record<string, unknown> | null;
     if (!full || typeof full !== 'object') return null;
-    // Algunas APIs devuelven el ítem anidado en .Item; el peso puede estar en el nivel superior
     const item = (full.Item as Record<string, unknown>) || full;
     const merged = { ...item, ...full } as OtapiRawProduct;
     if (item && item !== full && typeof item === 'object') {
       Object.keys(item).forEach((k) => { (merged as Record<string, unknown>)[k] = (item as Record<string, unknown>)[k]; });
     }
+    if (process.env.NODE_ENV === 'development' && !(globalThis as unknown as { _otapiFullInfoKeysLogged?: boolean })._otapiFullInfoKeysLogged) {
+      (globalThis as unknown as { _otapiFullInfoKeysLogged?: boolean })._otapiFullInfoKeysLogged = true;
+      const allKeys = Object.keys(merged).sort();
+      const configurableRelated = allKeys.filter((k) => /configur|variant|simple|configured/i.test(k));
+      console.log('📋 [GetItemFullInfo] Todas las claves de la respuesta OTAPI:', allKeys.join(', '));
+      if (configurableRelated.length > 0) {
+        const sample = configurableRelated.reduce((acc, k) => ({ ...acc, [k]: (merged as Record<string, unknown>)[k] }), {});
+        console.log('📋 [GetItemFullInfo] Valores de campos configurable/variant:', JSON.stringify(sample, null, 2));
+      }
+    }
+    setCachedFullInfo(itemId, merged);
     return merged;
   } catch (error) {
     return null;
   }
+}
+
+function configuratorsToKey(configurators: Array<{ Pid?: string; Vid?: string }>): string {
+  if (!configurators?.length) return '';
+  return configurators
+    .slice()
+    .sort((a, b) => (a.Pid ?? '').localeCompare(b.Pid ?? '') || (a.Vid ?? '').localeCompare(b.Vid ?? ''))
+    .map((x) => `${x.Pid ?? ''}:${x.Vid ?? ''}`)
+    .join(',');
+}
+
+export async function getItemConfigurationDetails(
+  itemId: string,
+  instanceKey: string,
+  language: string
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const itemParametersXml = `<ItemParameters><ItemId>${itemId}</ItemId></ItemParameters>`;
+    const url = new URL('http://otapi.net/service-json/BatchGetSimplifiedItemConfigurationInfo');
+    url.searchParams.append('instanceKey', instanceKey);
+    url.searchParams.append('language', language);
+    url.searchParams.append('itemParameters', itemParametersXml);
+    url.searchParams.append('blockList', 'ConfigurationDetails');
+    const response = await axios.get(url.toString(), { timeout: 8000 });
+    if (response.data.ErrorCode !== 0 && response.data.ErrorCode !== '0' && response.data.ErrorCode !== 'Ok') {
+      return map;
+    }
+    const data = response.data as Record<string, unknown>;
+    const result = (data.Result ?? data.ItemConfigurationInfoList ?? data) as Record<string, unknown> | undefined;
+    if (!result || typeof result !== 'object') return map;
+    const list = (result.ItemConfigurationInfoList ?? result.Content ?? result.Configurations ?? result.ConfigurationList) as Array<Record<string, unknown>> | undefined;
+    const configs = Array.isArray(list) ? list : [];
+    for (const c of configs) {
+      const id = c.Id ?? c.ConfigurationId;
+      if (id == null || typeof id !== 'string') continue;
+      const numericOnly = /^\d+$/.test(id);
+      if (!numericOnly) continue;
+      const configurators = c.Configurators ?? c.Configuration ?? c.Attributes;
+      const arr = Array.isArray(configurators) ? configurators : [];
+      const key = configuratorsToKey(arr as Array<{ Pid?: string; Vid?: string }>);
+      if (key) map.set(key, id);
+    }
+  } catch {
+    // Si falla (método de pago, bloque no disponible, etc.), devolvemos mapa vacío
+  }
+  return map;
 }
 
 async function searchProducts(
@@ -456,6 +525,18 @@ async function searchProducts(
       const items = response.data.Result?.Items?.Content || [];
       totalCount = response.data.Result?.Items?.TotalCount || 0;
       if (items.length === 0) break;
+      if (process.env.NODE_ENV === 'development' && allProducts.length === 0 && items[0] && typeof items[0] === 'object') {
+        const searchKeys = Object.keys(items[0] as object).sort();
+        const searchConfig = searchKeys.filter((k) => /configur|variant|simple|configured/i.test(k));
+        console.log('📋 [SearchItemsFrame] Claves del primer ítem:', searchKeys.join(', '));
+        if (searchConfig.length > 0) {
+          const sample = searchConfig.reduce((acc: Record<string, unknown>, k) => {
+            acc[k] = (items[0] as Record<string, unknown>)[k];
+            return acc;
+          }, {});
+          console.log('📋 [SearchItemsFrame] Campos configurable/variant:', JSON.stringify(sample, null, 2));
+        }
+      }
       allProducts.push(...items);
       if (allProducts.length >= maxToFetch || items.length < batchSize) break;
     } catch (error) { break; }
@@ -503,7 +584,26 @@ function extractReviewCount(product: OtapiRawProduct): number | undefined {
   return undefined;
 }
 
-function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number }) {
+function extractUrlsFromHtml(html: string): string[] {
+  if (!html || typeof html !== 'string') return [];
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  const push = (url: string) => {
+    const u = url.trim();
+    if (u && !seen.has(u)) {
+      seen.add(u);
+      urls.push(u);
+    }
+  };
+  const srcRegex = /\b(?:src|href)\s*=\s*["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = srcRegex.exec(html)) !== null) {
+    push(m[1]);
+  }
+  return urls;
+}
+
+export function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number }) {
   const title = product.Title || product.OriginalTitle || 'Sin título';
   const priceRMB = extractCorrectPrice(product);
   const priceUSD = priceRMB * rates.USD;
@@ -528,6 +628,12 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
       : undefined;
   const configs = product.ConfiguredItems || product.ItemConfigurations;
   const variantCount = configs?.length ?? 0;
+  const hasHierarchical = product.HasHierarchicalConfigurators === true;
+  const isConfigurable =
+    hasHierarchical ||
+    (typeof product.Configurable === 'boolean' ? product.Configurable : false) ||
+    (typeof product.OtapiItemConfigurable === 'boolean' ? product.OtapiItemConfigurable : false) ||
+    variantCount > 0;
   const L = dimensions?.length ?? 0;
   const W = dimensions?.width ?? 0;
   const H = dimensions?.height ?? 0;
@@ -550,6 +656,7 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
     ShopName: shopName,
     BrandName: product.BrandName,
     VariantCount: variantCount > 0 ? variantCount : undefined,
+    IsConfigurable: isConfigurable,
     ProviderType: product.ProviderType,
     PublishDate: publishDate,
     Weight: weightInfo?.value,
@@ -560,6 +667,12 @@ function mapProduct(product: OtapiRawProduct, rates: { USD: number; COP: number 
     DimensionsUnit: dimensions?.unit,
     VolumetricWeightKg: volumetricWeightKg != null ? Math.round(volumetricWeightKg * 100) / 100 : undefined,
     SellerRating: sellerRating,
+    ...(() => {
+      const desc = (product as Record<string, unknown>).Description;
+      if (typeof desc !== 'string') return { Description: undefined };
+      const urls = extractUrlsFromHtml(desc);
+      return { Description: urls.length > 0 ? urls : undefined };
+    })(),
   };
 }
 
@@ -616,7 +729,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(emptyResponse);
     }
 
-    // En desarrollo: log para ver estructura real y localizar peso
     if (process.env.NODE_ENV === 'development' && rawProducts[0]) {
       const sample = rawProducts[0] as Record<string, unknown>;
       const keys = Object.keys(sample);
@@ -629,7 +741,7 @@ export async function GET(request: NextRequest) {
       if (weightKeys.length) console.log('📦 [category-products] Weight-related keys:', weightKeys, weightKeys.map((k) => sample[k]));
       if (weightFeatures.length) console.log('📦 [category-products] FeaturedValues (weight):', weightFeatures);
       if (!weightKeys.length && !weightFeatures.length) console.log('📦 [category-products] No weight fields found in sample. Full keys:', keys);
-      
+
       const dimensionKeywords = ['length', 'width', 'height', 'dimension', 'size', 'package', 'longitud', 'ancho', 'alto', 'cm', 'mm'];
       const dimensionKeys = keys.filter((k) => dimensionKeywords.some((kw) => k.toLowerCase().includes(kw)));
       const dimensionFeatures = featured.filter(
@@ -640,7 +752,6 @@ export async function GET(request: NextRequest) {
       console.log('📐 [category-products] Dimension-related keys:', dimensionKeys.length ? dimensionKeys : 'none', dimensionKeys.length ? dimensionKeys.map((k) => ({ key: k, value: sample[k] })) : '');
       console.log('📐 [category-products] FeaturedValues (dimensions):', dimensionFeatures.length ? dimensionFeatures : 'none');
       if (!dimensionKeys.length && !dimensionFeatures.length) console.log('📐 [category-products] No dimension fields in sample. All FeaturedValues names:', featured.map((f) => f.Name));
-      // PhysicalParameters y Attributes suelen traer dimensiones en OTAPI/Taobao
       if (sample.PhysicalParameters != null) console.log('📐 [category-products] PhysicalParameters:', JSON.stringify(sample.PhysicalParameters));
       const attrs = sample.Attributes as Array<{ PropertyName?: string; OriginalPropertyName?: string; Value?: unknown }> | undefined;
       if (Array.isArray(attrs)) {

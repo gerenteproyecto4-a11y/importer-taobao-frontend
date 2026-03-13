@@ -1,12 +1,13 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { OtApiService } from "@/lib/api/otapi";
-import { OTAPI_CONFIG } from "@/lib/api/config";
-import { OtapiItem, OtapiCategory } from "@/types/product";
+import { OTAPI_CONFIG } from '@/lib/api/config';
+import { OtApiService } from '@/lib/api/otapi';
+import { OtapiCategory, OtapiItem } from '@/types/product';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
-const RECENT_SEARCHES_KEY = "taobao-recent-searches";
+const RECENT_SEARCHES_KEY = 'taobao-recent-searches';
 const MAX_RECENT_SEARCHES = 5;
 
 interface RecentSearch {
@@ -18,7 +19,7 @@ interface RecentSearch {
 }
 
 function loadRecentSearchesFromStorage(): RecentSearch[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(RECENT_SEARCHES_KEY);
     if (!raw) return [];
@@ -31,9 +32,9 @@ function loadRecentSearchesFromStorage(): RecentSearch[] {
 
 function saveRecentSearch(item: RecentSearch) {
   const list = loadRecentSearchesFromStorage();
-  const key = `${item.categoryId}|${item.subcategoryId || ""}|${item.sortType}`;
+  const key = `${item.categoryId}|${item.subcategoryId || ''}|${item.sortType}`;
   const filtered = list.filter(
-    (x) => `${x.categoryId}|${x.subcategoryId || ""}|${x.sortType}` !== key
+    (x) => `${x.categoryId}|${x.subcategoryId || ''}|${x.sortType}` !== key
   );
   const updated = [item, ...filtered].slice(0, MAX_RECENT_SEARCHES);
   try {
@@ -49,22 +50,22 @@ export default function DashboardPage() {
   const [products, setProducts] = useState<OtapiItem[]>([]);
   const [categories, setCategories] = useState<OtapiCategory[]>([]);
   const [subcategories, setSubcategories] = useState<OtapiCategory[]>([]);
-  const [subcategoriesByParentId, setSubcategoriesByParentId] = useState<Record<string, OtapiCategory[]>>({});
+  const [subcategoriesByParentId, setSubcategoriesByParentId] = useState<
+    Record<string, OtapiCategory[]>
+  >({});
 
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedSubcategory, setSelectedSubcategory] = useState("");
-  const [categorySearch, setCategorySearch] = useState("");
-  const [subcategorySearch, setSubcategorySearch] = useState("");
-  const [sortType, setSortType] = useState("Ranksales");
-  const [currency, setCurrency] = useState<"CNY" | "USD" | "COP">("CNY");
-  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(
-    new Set(),
-  );
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedSubcategory, setSelectedSubcategory] = useState('');
+  const [categorySearch, setCategorySearch] = useState('');
+  const [subcategorySearch, setSubcategorySearch] = useState('');
+  const [sortType, setSortType] = useState('Ranksales');
+  const [currency, setCurrency] = useState<'CNY' | 'USD' | 'COP'>('CNY');
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(true);
-  const [error, setError] = useState("");
-  const [environment, setEnvironment] = useState("");
+  const [error, setError] = useState('');
+  const [environment, setEnvironment] = useState('');
   const [pageSize, setPageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
@@ -72,40 +73,33 @@ export default function DashboardPage() {
   const [categoryPath, setCategoryPath] = useState<OtapiCategory[]>([]);
   const [loadingPath, setLoadingPath] = useState(false);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
+  const [loadingExportJson, setLoadingExportJson] = useState(false);
 
   // Filtrar categorías por búsqueda
   const filteredCategories = useMemo(() => {
     if (!categorySearch.trim()) return categories;
     const searchLower = categorySearch.toLowerCase().trim();
-    return categories.filter((cat) =>
-      cat.Name.toLowerCase().includes(searchLower),
-    );
+    return categories.filter((cat) => cat.Name.toLowerCase().includes(searchLower));
   }, [categories, categorySearch]);
 
   // Filtrar subcategorías por búsqueda
   const filteredSubcategories = useMemo(() => {
     if (!subcategorySearch.trim()) return subcategories;
     const searchLower = subcategorySearch.toLowerCase().trim();
-    return subcategories.filter((cat) =>
-      cat.Name.toLowerCase().includes(searchLower),
-    );
+    return subcategories.filter((cat) => cat.Name.toLowerCase().includes(searchLower));
   }, [subcategories, subcategorySearch]);
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken");
-    const env = localStorage.getItem("environment");
-    const savedCurrency = localStorage.getItem("currency") as
-      | "CNY"
-      | "USD"
-      | "COP"
-      | null;
+    const token = localStorage.getItem('authToken');
+    const env = localStorage.getItem('environment');
+    const savedCurrency = localStorage.getItem('currency') as 'CNY' | 'USD' | 'COP' | null;
 
     if (!token) {
-      router.push("/");
+      router.push('/');
       return;
     }
 
-    setEnvironment(env || "");
+    setEnvironment(env || '');
     if (savedCurrency) {
       setCurrency(savedCurrency);
     }
@@ -115,13 +109,13 @@ export default function DashboardPage() {
 
   // Save currency preference to localStorage
   useEffect(() => {
-    localStorage.setItem("currency", currency);
+    localStorage.setItem('currency', currency);
   }, [currency]);
 
   useEffect(() => {
     if (!selectedCategory) {
       setSubcategories([]);
-      setSelectedSubcategory("");
+      setSelectedSubcategory('');
       return;
     }
     const fromTree = subcategoriesByParentId[selectedCategory];
@@ -145,13 +139,9 @@ export default function DashboardPage() {
     setLoadingPath(true);
     const otApiService = new OtApiService();
     otApiService
-      .getCategoryRootPath(
-        OTAPI_CONFIG.INSTANCE_KEY,
-        categoryId,
-        OTAPI_CONFIG.DEFAULT_LANGUAGE,
-      )
+      .getCategoryRootPath(OTAPI_CONFIG.INSTANCE_KEY, categoryId, OTAPI_CONFIG.DEFAULT_LANGUAGE)
       .then((res) => {
-        if (res.ErrorCode === 0 || res.ErrorCode === "Ok") {
+        if (res.ErrorCode === 0 || res.ErrorCode === 'Ok') {
           setCategoryPath(res.Content || []);
         } else {
           setCategoryPath([]);
@@ -167,18 +157,18 @@ export default function DashboardPage() {
       const otApiService = new OtApiService();
       const response = await otApiService.getCategoriesTree(
         OTAPI_CONFIG.INSTANCE_KEY,
-        OTAPI_CONFIG.DEFAULT_LANGUAGE,
+        OTAPI_CONFIG.DEFAULT_LANGUAGE
       );
 
-      if (response.ErrorCode !== 0 && response.ErrorCode !== "Ok") {
-        console.warn("Failed to fetch categories tree:", response.ErrorDescription);
+      if (response.ErrorCode !== 0 && response.ErrorCode !== 'Ok') {
+        console.warn('Failed to fetch categories tree:', response.ErrorDescription);
         return;
       }
 
       setCategories(response.Content || []);
       setSubcategoriesByParentId(response.SubcategoriesByParentId || {});
     } catch (err) {
-      console.error("Error fetching categories tree:", err);
+      console.error('Error fetching categories tree:', err);
     } finally {
       setLoadingCategories(false);
     }
@@ -186,25 +176,31 @@ export default function DashboardPage() {
 
   const fetchProducts = async (
     framePosition: number = 0,
-    overrides?: { categoryId: string; subcategoryId?: string; sortType?: string; categoryName?: string; subcategoryName?: string }
+    overrides?: {
+      categoryId: string;
+      subcategoryId?: string;
+      sortType?: string;
+      categoryName?: string;
+      subcategoryName?: string;
+    }
   ) => {
     const catId = overrides?.categoryId ?? selectedCategory;
     const subId = overrides?.subcategoryId;
     const categoryId = subId || catId;
 
     if (!categoryId) {
-      setError("Por favor selecciona una categoría");
+      setError('Por favor selecciona una categoría');
       return;
     }
 
     setLoading(true);
-    setError("");
+    setError('');
 
     if (framePosition === 0) {
       setSelectedProducts(new Set());
       if (overrides) {
         setSelectedCategory(catId);
-        setSelectedSubcategory(subId ?? "");
+        setSelectedSubcategory(subId ?? '');
         setSortType(overrides.sortType ?? sortType);
       }
     } else {
@@ -224,22 +220,23 @@ export default function DashboardPage() {
         sortType: sortToUse,
       });
 
-      if (response.ErrorCode !== 0 && response.ErrorCode !== "Ok") {
-        throw new Error(
-          response.ErrorDescription || "Error al cargar productos",
-        );
+      if (response.ErrorCode !== 0 && response.ErrorCode !== 'Ok') {
+        throw new Error(response.ErrorDescription || 'Error al cargar productos');
       }
 
       setProducts(response.Content || []);
       setTotalCount(response.TotalCount ?? 0);
       if (!response.Content || response.Content.length === 0) {
-        setError("No se encontraron productos en esta categoría");
+        setError('No se encontraron productos en esta categoría');
       } else if (framePosition === 0) {
-        const categoryName = overrides?.categoryName ?? categories.find((c) => c.CategoryId === catId)?.Name ?? "";
-        const subcategoryName = overrides?.subcategoryName ?? (subId ? subcategories.find((s) => s.CategoryId === subId)?.Name ?? "" : "");
+        const categoryName =
+          overrides?.categoryName ?? categories.find((c) => c.CategoryId === catId)?.Name ?? '';
+        const subcategoryName =
+          overrides?.subcategoryName ??
+          (subId ? (subcategories.find((s) => s.CategoryId === subId)?.Name ?? '') : '');
         const saved = saveRecentSearch({
           categoryId: catId,
-          subcategoryId: subId ?? "",
+          subcategoryId: subId ?? '',
           categoryName,
           subcategoryName,
           sortType: sortToUse,
@@ -247,19 +244,17 @@ export default function DashboardPage() {
         setRecentSearches(saved);
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Error al cargar productos",
-      );
-      console.error("Error fetching products:", err);
+      setError(err instanceof Error ? err.message : 'Error al cargar productos');
+      console.error('Error fetching products:', err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("environment");
-    router.push("/");
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('environment');
+    router.push('/');
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -270,7 +265,7 @@ export default function DashboardPage() {
 
   const loadRecentSearch = (item: RecentSearch) => {
     setCurrentPage(0);
-    setError("");
+    setError('');
     fetchProducts(0, {
       categoryId: item.categoryId,
       subcategoryId: item.subcategoryId || undefined,
@@ -296,26 +291,26 @@ export default function DashboardPage() {
 
   const getSortLabel = (sort: string) => {
     switch (sort) {
-      case "Ranksales":
-        return "Más Vendidos";
-      case "Rankprice_asc":
-        return "Precio: Menor a Mayor";
-      case "Rankprice_desc":
-        return "Precio: Mayor a Menor";
-      case "Ranknew":
-        return "Más Recientes";
+      case 'Ranksales':
+        return 'Más Vendidos';
+      case 'Rankprice_asc':
+        return 'Precio: Menor a Mayor';
+      case 'Rankprice_desc':
+        return 'Precio: Mayor a Menor';
+      case 'Ranknew':
+        return 'Más Recientes';
       default:
-        return "Más Vendidos";
+        return 'Más Vendidos';
     }
   };
 
   const formatPrice = (product: OtapiItem) => {
     switch (currency) {
-      case "CNY":
+      case 'CNY':
         return `¥${product.PriceRMB.toFixed(2)}`;
-      case "USD":
+      case 'USD':
         return `$${product.PriceUSD.toFixed(2)}`;
-      case "COP":
+      case 'COP':
         return `COP$${Math.round(product.PriceCOP).toLocaleString()}`;
       default:
         return `¥${product.PriceRMB.toFixed(2)}`;
@@ -324,14 +319,14 @@ export default function DashboardPage() {
 
   const getCurrencyLabel = (curr: string) => {
     switch (curr) {
-      case "CNY":
-        return "🇨🇳 Yuan (¥)";
-      case "USD":
-        return "🇺🇸 Dólar ($)";
-      case "COP":
-        return "🇨🇴 Peso (COP$)";
+      case 'CNY':
+        return '🇨🇳 Yuan (¥)';
+      case 'USD':
+        return '🇺🇸 Dólar ($)';
+      case 'COP':
+        return '🇨🇴 Peso (COP$)';
       default:
-        return "🇨🇳 Yuan (¥)";
+        return '🇨🇳 Yuan (¥)';
     }
   };
 
@@ -346,8 +341,7 @@ export default function DashboardPage() {
   };
 
   const handleToggleSelectAll = () => {
-    if (selectedProducts.size === products.length)
-      setSelectedProducts(new Set());
+    if (selectedProducts.size === products.length) setSelectedProducts(new Set());
     else setSelectedProducts(new Set(products.map((p) => p.ItemId)));
   };
 
@@ -358,15 +352,63 @@ export default function DashboardPage() {
         ? products // Si nada seleccionado, TODOS
         : products.filter((p) => selectedProducts.has(p.ItemId));
 
-    const csvRows = [["Taobao URL"], ...selected.map((p) => [p.ItemUrl])];
-    const csvContent = csvRows.map((row) => row.join(",")).join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const csvRows = [['Taobao URL'], ...selected.map((p) => [p.ItemUrl])];
+    const csvContent = csvRows.map((row) => row.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const a = document.createElement('a');
     a.href = url;
-    a.download = "taobao-urls.csv";
+    a.download = 'taobao-urls.csv';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const exportToJsonFull = async () => {
+    const selected =
+      selectedProducts.size === 0
+        ? products
+        : products.filter((p) => selectedProducts.has(p.ItemId));
+    const itemIds = selected.map((p) => p.ItemId);
+    if (itemIds.length === 0) {
+      setError('Selecciona al menos un producto o carga el listado.');
+      return;
+    }
+    setLoadingExportJson(true);
+    setError('');
+    try {
+      const otApi = new OtApiService();
+      const leafCategoryId = selectedSubcategory || selectedCategory || undefined;
+      const leafCategoryName =
+        categoryPath.length > 0
+          ? categoryPath[categoryPath.length - 1]?.Name
+          : selectedSubcategory
+            ? subcategories.find((s) => s.CategoryId === selectedSubcategory)?.Name
+            : selectedCategory
+              ? categories.find((c) => c.CategoryId === selectedCategory)?.Name
+              : undefined;
+      const data = await otApi.exportProductsFull(
+        OTAPI_CONFIG.INSTANCE_KEY,
+        itemIds,
+        OTAPI_CONFIG.DEFAULT_LANGUAGE,
+        leafCategoryId,
+        leafCategoryName
+      );
+      const jsonString = JSON.stringify(data, null, 2);
+      // Descargar archivo
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `taobao-products-full-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      // Imprimir en consola para desarrollo / .NET
+      console.log('Taobao export (JSON completo para .NET):', data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al exportar JSON');
+    } finally {
+      setLoadingExportJson(false);
+    }
   };
 
   return (
@@ -376,12 +418,8 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Taobao Importer
-              </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {environment}
-              </p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Taobao Importer</h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{environment}</p>
             </div>
             <button
               onClick={handleLogout}
@@ -395,7 +433,6 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Breadcrumb: desde API (GetCategoryRootPath) o fallback con nombres del árbol */}
         {(selectedCategory || selectedSubcategory) && (
           <div className="mb-4 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
             {loadingPath ? (
@@ -421,13 +458,15 @@ export default function DashboardPage() {
                   {selectedCategory && (
                     <>
                       <span className="mx-1">›</span>
-                      {categories.find((c) => c.CategoryId === selectedCategory)?.Name ?? "Categoría"}
+                      {categories.find((c) => c.CategoryId === selectedCategory)?.Name ??
+                        'Categoría'}
                     </>
                   )}
                   {selectedSubcategory && (
                     <>
                       <span className="mx-1">›</span>
-                      {subcategories.find((s) => s.CategoryId === selectedSubcategory)?.Name ?? "Subcategoría"}
+                      {subcategories.find((s) => s.CategoryId === selectedSubcategory)?.Name ??
+                        'Subcategoría'}
                     </>
                   )}
                 </span>
@@ -440,7 +479,7 @@ export default function DashboardPage() {
         {recentSearches.length > 0 && (
           <div className="mb-4">
             <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-              Búsquedas recientes{" "}
+              Búsquedas recientes{' '}
               <span className="text-xs font-normal text-amber-600 dark:text-amber-400">
                 (cada &quot;Cargar&quot; = 1 nueva búsqueda / 1 cobro)
               </span>
@@ -448,7 +487,7 @@ export default function DashboardPage() {
             <div className="flex flex-wrap gap-2">
               {recentSearches.map((item, idx) => (
                 <button
-                  key={`${item.categoryId}-${item.subcategoryId || "root"}-${idx}`}
+                  key={`${item.categoryId}-${item.subcategoryId || 'root'}-${idx}`}
                   type="button"
                   onClick={() => loadRecentSearch(item)}
                   disabled={loading}
@@ -459,9 +498,7 @@ export default function DashboardPage() {
                       ? `${item.categoryName} › ${item.subcategoryName}`
                       : item.categoryName}
                   </span>
-                  <span className="text-gray-500 dark:text-gray-400 text-xs">
-                    Cargar
-                  </span>
+                  <span className="text-gray-500 dark:text-gray-400 text-xs">Cargar</span>
                 </button>
               ))}
             </div>
@@ -527,8 +564,8 @@ export default function DashboardPage() {
                       value={selectedCategory}
                       onChange={(e) => {
                         setSelectedCategory(e.target.value);
-                        setSelectedSubcategory("");
-                        setCategorySearch("");
+                        setSelectedSubcategory('');
+                        setCategorySearch('');
                       }}
                       className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                       disabled={loading}
@@ -545,8 +582,7 @@ export default function DashboardPage() {
 
                     {categorySearch && (
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Mostrando {filteredCategories.length} de{" "}
-                        {categories.length} categorías
+                        Mostrando {filteredCategories.length} de {categories.length} categorías
                       </p>
                     )}
                   </div>
@@ -565,11 +601,7 @@ export default function DashboardPage() {
                         onChange={(e) => setSubcategorySearch(e.target.value)}
                         placeholder="Buscar subcategoría..."
                         className="w-full px-4 py-2 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
-                        disabled={
-                          loading ||
-                          !selectedCategory ||
-                          subcategories.length === 0
-                        }
+                        disabled={loading || !selectedCategory || subcategories.length === 0}
                       />
                       <svg
                         className="absolute left-3 top-2.5 w-5 h-5 text-gray-400"
@@ -591,14 +623,10 @@ export default function DashboardPage() {
                       value={selectedSubcategory}
                       onChange={(e) => {
                         setSelectedSubcategory(e.target.value);
-                        setSubcategorySearch("");
+                        setSubcategorySearch('');
                       }}
                       className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                      disabled={
-                        loading ||
-                        !selectedCategory ||
-                        subcategories.length === 0
-                      }
+                      disabled={loading || !selectedCategory || subcategories.length === 0}
                       size={5}
                     >
                       <option value="">Todas las subcategorías</option>
@@ -611,8 +639,8 @@ export default function DashboardPage() {
 
                     {subcategorySearch && subcategories.length > 0 && (
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Mostrando {filteredSubcategories.length} de{" "}
-                        {subcategories.length} subcategorías
+                        Mostrando {filteredSubcategories.length} de {subcategories.length}{' '}
+                        subcategorías
                       </p>
                     )}
                   </div>
@@ -631,12 +659,8 @@ export default function DashboardPage() {
                       disabled={loading}
                     >
                       <option value="Ranksales">🔥 Más Vendidos</option>
-                      <option value="Rankprice_asc">
-                        💰 Precio: Menor a Mayor
-                      </option>
-                      <option value="Rankprice_desc">
-                        💎 Precio: Mayor a Menor
-                      </option>
+                      <option value="Rankprice_asc">💰 Precio: Menor a Mayor</option>
+                      <option value="Rankprice_desc">💎 Precio: Mayor a Menor</option>
                       <option value="Ranknew">✨ Más Recientes</option>
                     </select>
                   </div>
@@ -664,15 +688,13 @@ export default function DashboardPage() {
                     </label>
                     <select
                       value={currency}
-                      onChange={(e) =>
-                        setCurrency(e.target.value as "CNY" | "USD" | "COP")
-                      }
+                      onChange={(e) => setCurrency(e.target.value as 'CNY' | 'USD' | 'COP')}
                       className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                       disabled={loading}
                     >
-                      <option value="CNY">{getCurrencyLabel("CNY")}</option>
-                      <option value="USD">{getCurrencyLabel("USD")}</option>
-                      <option value="COP">{getCurrencyLabel("COP")}</option>
+                      <option value="CNY">{getCurrencyLabel('CNY')}</option>
+                      <option value="USD">{getCurrencyLabel('USD')}</option>
+                      <option value="COP">{getCurrencyLabel('COP')}</option>
                     </select>
                   </div>
                 </div>
@@ -747,14 +769,12 @@ export default function DashboardPage() {
                     clipRule="evenodd"
                   />
                 </svg>
-                <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                  {error}
-                </p>
+                <p className="text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  setError("");
+                  setError('');
                   setCurrentPage(0);
                   fetchProducts(0);
                 }}
@@ -783,10 +803,7 @@ export default function DashboardPage() {
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"
-                  checked={
-                    selectedProducts.size === products.length &&
-                    products.length > 0
-                  }
+                  checked={selectedProducts.size === products.length && products.length > 0}
                   onChange={handleToggleSelectAll}
                   className="form-checkbox h-5 w-5 text-blue-600"
                   id="select-all-checkbox"
@@ -805,9 +822,22 @@ export default function DashboardPage() {
                 type="button"
               >
                 {selectedProducts.size === 0 || selectedProducts.size === products.length
-                  ? "Exportar URLs"
+                  ? 'Exportar URLs'
                   : `Exportar ${selectedProducts.size} URLs`}
               </button>
+              TODO: Exportar JSON completo comentado porque aun no se va implementar
+              {/* <button
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition text-sm disabled:opacity-50"
+                onClick={exportToJsonFull}
+                disabled={products.length === 0 || loadingExportJson}
+                type="button"
+              >
+                {loadingExportJson
+                  ? 'Generando…'
+                  : selectedProducts.size === 0 || selectedProducts.size === products.length
+                    ? 'Exportar JSON completo'
+                    : `JSON completo (${selectedProducts.size})`}
+              </button> */}
             </div>
             {/* Paginación */}
             {totalCount > 0 && (
@@ -853,14 +883,15 @@ export default function DashboardPage() {
                   tabIndex={0}
                   onClick={() => handleSelectProduct(product.ItemId)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
+                    if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
                       handleSelectProduct(product.ItemId);
                     }
                   }}
-                  className={`flex flex-col h-full min-h-0 bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300 relative cursor-pointer ${isSelected ? "shadow-lg shadow-blue-400/60" : ""
-                    }`}
-                  style={{ textAlign: "inherit" }}
+                  className={`flex flex-col h-full min-h-0 bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300 relative cursor-pointer ${
+                    isSelected ? 'shadow-lg shadow-blue-400/60' : ''
+                  }`}
+                  style={{ textAlign: 'inherit' }}
                 >
                   {/* Selector */}
                   <input
@@ -875,11 +906,11 @@ export default function DashboardPage() {
                     {product.ImageUrl ? (
                       <img
                         src={product.ImageUrl}
-                        alt={product.Title || "Producto"}
+                        alt={product.Title || 'Producto'}
                         className="w-full h-full object-cover"
                         onError={(e) => {
                           e.currentTarget.src =
-                            "https://via.placeholder.com/300x300?text=Sin+Imagen";
+                            'https://via.placeholder.com/300x300?text=Sin+Imagen';
                         }}
                       />
                     ) : (
@@ -899,13 +930,12 @@ export default function DashboardPage() {
                         </svg>
                       </div>
                     )}
-                    {product.OriginalPrice &&
-                      product.OriginalPrice > product.Price && (
-                        <div className="absolute top-2 right-2 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-                          OFERTA
-                        </div>
-                      )}
-                    {sortType === "Ranksales" && index < 3 && (
+                    {product.OriginalPrice && product.OriginalPrice > product.Price && (
+                      <div className="absolute top-2 right-2 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
+                        OFERTA
+                      </div>
+                    )}
+                    {sortType === 'Ranksales' && index < 3 && (
                       <div className="absolute top-2 left-9 bg-yellow-400 text-gray-900 px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
                         <span>🔥</span>#{index + 1} Más Vendido
                       </div>
@@ -914,14 +944,14 @@ export default function DashboardPage() {
                   <div className="flex flex-col flex-1 min-h-0 p-4 flex-basis-0">
                     <div className="flex-1 min-h-[200px] flex flex-col">
                       <h3 className="text-sm font-medium text-gray-900 dark:text-white line-clamp-2 mb-3 h-10 leading-5">
-                        {product.Title || "Producto sin título"}
+                        {product.Title || 'Producto sin título'}
                       </h3>
                       <div className="flex items-baseline gap-2 mb-3">
                         <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                           {formatPrice(product)}
                         </span>
                         {product.OriginalPrice &&
-                          typeof product.OriginalPrice === "number" &&
+                          typeof product.OriginalPrice === 'number' &&
                           product.OriginalPrice > product.Price && (
                             <span className="text-sm text-gray-500 line-through">
                               ¥{product.OriginalPrice.toFixed(2)}
@@ -929,65 +959,87 @@ export default function DashboardPage() {
                           )}
                       </div>
                       <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-4">
-                        {product.Rating && typeof product.Rating === "number" && (
+                        {product.Rating && typeof product.Rating === 'number' && (
                           <div className="flex items-center gap-1">
-                            <span className="text-yellow-500" title="Valoración del producto">⭐</span>
-                            <span className="font-medium">
-                              {product.Rating.toFixed(1)}
+                            <span className="text-yellow-500" title="Valoración del producto">
+                              ⭐
                             </span>
+                            <span className="font-medium">{product.Rating.toFixed(1)}</span>
                             <span className="text-xs text-gray-500 dark:text-gray-400">/5</span>
                             {product.ReviewCount != null && product.ReviewCount > 0 && (
-                              <span className="text-xs text-gray-500 dark:text-gray-400" title="Reseñas">
-                                ({product.ReviewCount.toLocaleString("es")} reseñas)
+                              <span
+                                className="text-xs text-gray-500 dark:text-gray-400"
+                                title="Reseñas"
+                              >
+                                ({product.ReviewCount.toLocaleString('es')} reseñas)
                               </span>
                             )}
                           </div>
                         )}
                         <span className="text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-full">
-                          {typeof product.SalesCount === "number"
-                            ? product.SalesCount.toLocaleString("es")
-                            : "0"}{" "}
+                          {typeof product.SalesCount === 'number'
+                            ? product.SalesCount.toLocaleString('es')
+                            : '0'}{' '}
                           vendidos
                         </span>
                       </div>
                       {(product.ShopName || product.BrandName) && (
                         <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 space-y-0.5">
                           {product.BrandName && (
-                            <p className="truncate" title="Marca">🏷️ {product.BrandName}</p>
+                            <p className="truncate" title="Marca">
+                              🏷️ {product.BrandName}
+                            </p>
                           )}
                           {product.ShopName && (
-                            <p className="truncate" title="Tienda">🏪 {product.ShopName}</p>
+                            <p className="truncate" title="Tienda">
+                              🏪 {product.ShopName}
+                            </p>
                           )}
                         </div>
                       )}
-                      {(product.Weight != null || product.SellerRating != null || product.VariantCount != null || product.VolumetricWeightKg != null || product.Length != null || product.Width != null || product.Height != null) && (
+                      {(product.Weight != null ||
+                        product.SellerRating != null ||
+                        product.VariantCount != null ||
+                        product.VolumetricWeightKg != null ||
+                        product.Length != null ||
+                        product.Width != null ||
+                        product.Height != null) && (
                         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mb-2">
                           {product.Weight != null && (
                             <span>
-                              ⚖️ {product.Weight} {product.WeightUnit ?? "kg"}
+                              ⚖️ {product.Weight} {product.WeightUnit ?? 'kg'}
                             </span>
                           )}
-                          {(product.VolumetricWeightKg != null || (product.Length != null || product.Width != null || product.Height != null)) && (() => {
-                            if (product.VolumetricWeightKg != null) {
+                          {(product.VolumetricWeightKg != null ||
+                            product.Length != null ||
+                            product.Width != null ||
+                            product.Height != null) &&
+                            (() => {
+                              if (product.VolumetricWeightKg != null) {
+                                return (
+                                  <span
+                                    title={`Peso volumétrico = (L×W×H)/6000. Medidas: ${product.Length ?? '?'} × ${product.Width ?? '?'} × ${product.Height ?? '?'} cm. Se factura el mayor entre peso real y peso vol.`}
+                                  >
+                                    📦 Peso vol.: {product.VolumetricWeightKg.toFixed(2)} kg
+                                  </span>
+                                );
+                              }
+                              const L = product.Length ?? 0;
+                              const W = product.Width ?? 0;
+                              const H = product.Height ?? 0;
+                              const dims = [L, W, H].filter((n) => n > 0);
+                              if (dims.length === 0 || (dims.length === 1 && dims[0]! < 3))
+                                return null;
                               return (
-                                <span title={`Peso volumétrico = (L×W×H)/6000. Medidas: ${product.Length ?? "?"} × ${product.Width ?? "?"} × ${product.Height ?? "?"} cm. Se factura el mayor entre peso real y peso vol.`}>
-                                  📦 Peso vol.: {product.VolumetricWeightKg.toFixed(2)} kg
+                                <span title="Medidas (L × W × H)">
+                                  📐 {dims.join(' × ')} {product.DimensionsUnit ?? 'cm'}
                                 </span>
                               );
-                            }
-                            const L = product.Length ?? 0;
-                            const W = product.Width ?? 0;
-                            const H = product.Height ?? 0;
-                            const dims = [L, W, H].filter((n) => n > 0);
-                            if (dims.length === 0 || (dims.length === 1 && dims[0]! < 3)) return null;
-                            return (
-                              <span title="Medidas (L × W × H)">
-                                📐 {dims.join(" × ")} {product.DimensionsUnit ?? "cm"}
-                              </span>
-                            );
-                          })()}
+                            })()}
                           {product.SellerRating != null && (
-                            <span title="Valoración de la tienda (0-5)">🏬 {Number(product.SellerRating).toFixed(1)}/5 tienda</span>
+                            <span title="Valoración de la tienda (0-5)">
+                              🏬 {Number(product.SellerRating).toFixed(1)}/5 tienda
+                            </span>
                           )}
                           {product.VariantCount != null && product.VariantCount > 0 && (
                             <span title="Variantes/SKUs">📦 {product.VariantCount} variantes</span>
@@ -996,7 +1048,7 @@ export default function DashboardPage() {
                       )}
                       {product.PublishDate && (
                         <p className="text-xs text-purple-600 dark:text-purple-400 mb-2 truncate">
-                          📅 {new Date(product.PublishDate).toLocaleDateString("es-ES")}
+                          📅 {new Date(product.PublishDate).toLocaleDateString('es-ES')}
                         </p>
                       )}
                     </div>
@@ -1004,29 +1056,58 @@ export default function DashboardPage() {
                     <div className="flex-shrink-0 pt-2 mt-auto border-t border-gray-200 dark:border-gray-600">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         {product.ProviderType && (
-                          <span className="text-xs font-medium bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded" title="Proveedor">
+                          <span
+                            className="text-xs font-medium bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded"
+                            title="Proveedor"
+                          >
                             {product.ProviderType}
                           </span>
                         )}
-                        <span className="text-xs text-gray-400 dark:text-gray-500 font-mono truncate" title="ID para catálogo/soporte">
+                        {product.IsConfigurable != null && (
+                          <span
+                            className={`text-xs font-medium px-2 py-0.5 rounded ${product.IsConfigurable ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}
+                            title={
+                              product.IsConfigurable
+                                ? 'Producto con variantes/SKUs'
+                                : 'Producto simple'
+                            }
+                          >
+                            {product.IsConfigurable ? 'Configurable' : 'Simple'}
+                          </span>
+                        )}
+                        <span
+                          className="text-xs text-gray-400 dark:text-gray-500 font-mono truncate"
+                          title="ID para catálogo/soporte"
+                        >
                           Taobao ID: {product.ItemId}
                         </span>
                       </div>
-                      {product.ItemUrl ? (
-                        <a
-                          href={product.ItemUrl}
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/dashboard/product/${product.ItemId}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="block w-full text-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg transition-all font-medium text-sm shadow-md hover:shadow-lg"
                           onClick={(e) => e.stopPropagation()}
+                          className="flex-1 text-center px-3 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg transition-all font-medium text-sm"
                         >
-                          Ver en Taobao →
-                        </a>
-                      ) : (
-                        <div className="block w-full text-center px-4 py-2.5 bg-gray-400 text-white rounded-lg font-medium text-sm cursor-not-allowed">
-                          URL no disponible
-                        </div>
-                      )}
+                          Ver detalle
+                        </Link>
+                        {product.ItemUrl ? (
+                          <a
+                            href={product.ItemUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 text-center px-3 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg transition-all font-medium text-sm shadow-md hover:shadow-lg"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Ver en Taobao →
+                          </a>
+                        ) : (
+                          <span className="flex-1 text-center px-3 py-2.5 bg-gray-400 text-white rounded-lg font-medium text-sm cursor-not-allowed">
+                            URL no disponible
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1057,8 +1138,8 @@ export default function DashboardPage() {
               Selecciona una categoría para comenzar
             </h3>
             <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
-              Elige una categoría del menú superior para explorar los productos
-              más vendidos de Taobao
+              Elige una categoría del menú superior para explorar los productos más vendidos de
+              Taobao
             </p>
           </div>
         )}

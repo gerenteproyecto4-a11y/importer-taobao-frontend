@@ -1,5 +1,12 @@
 import axios from 'axios';
-import { OtapiResponse, OtapiCategory, OtapiItem, OtapiCategoriesTreeResponse } from '@/types/product';
+import {
+  OtapiResponse,
+  OtapiCategory,
+  OtapiItem,
+  OtapiCategoriesTreeResponse,
+  ItemDetailResponse,
+  ExportProductsFullResponse,
+} from '@/types/product';
 
 export class OtApiService {
   async getCategoriesTree(instanceKey: string, language: string = 'es'): Promise<OtapiCategoriesTreeResponse> {
@@ -132,5 +139,42 @@ export class OtApiService {
       }
       throw new Error('An unexpected error occurred');
     }
+  }
+
+  async getItemDetail(
+    instanceKey: string,
+    itemId: string,
+    language: string = 'es'
+  ): Promise<ItemDetailResponse | null> {
+    try {
+      const response = await axios.get<ItemDetailResponse>(
+        '/api/otapi/item-detail',
+        { params: { instanceKey, itemId, language } }
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return null;
+      }
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.error || 'Failed to fetch item detail');
+      }
+      throw new Error('An unexpected error occurred');
+    }
+  }
+
+  async exportProductsFull(
+    instanceKey: string,
+    itemIds: string[],
+    language: string = 'es',
+    categoryId?: string,
+    categoryName?: string
+  ): Promise<ExportProductsFullResponse> {
+    const response = await axios.post<ExportProductsFullResponse>(
+      '/api/otapi/export-products-full',
+      { instanceKey, itemIds, language, categoryId, categoryName },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    return response.data;
   }
 }
